@@ -80,27 +80,52 @@ def build_season_dataframe(year: int, history: mfl.HistoricalBids) -> pd.DataFra
 
 
 def fit_position_market(df: pd.DataFrame) -> dict[str, dict]:
-    """Linear fit salary ~ a*points + b per position, using rows with salary > league min.
+    """Power-law fit per position: salary = c * points^k, fit via log-log regression.
 
-    Returns {position: {"a": slope, "b": intercept, "n": sample size}}.
+    Why power law instead of linear: elite-tier salaries grow faster than mid-tier production.
+    A linear fit understates the top of the curve, making elite players look like overpays.
+    Power law (k > 1) captures the convex elite premium that auction markets actually pay.
+
+    Fit only on the *productive* tail per position per year (top-N by points), since the
+    "market" we want to model is what teams pay for real production — not minimum-salary
+    bench depth, which dominates the dataset and flattens the curve.
+
+    Falls back to median salary when sample is too small.
+
+    Returns {position: {"k": exponent, "c": coefficient, "n": sample size, "median": float}}.
     """
+    import numpy as np
+
     fits: dict[str, dict] = {}
     for pos in SCORING_POSITIONS:
-        sub = df[(df["position"] == pos) & (df["salary"] > LEAGUE_MIN_SALARY) & (df["points"] > 0)]
+        # Take top-N by points per year for this position, then pool.
+        n_per_year = TIER_SIZES[pos] * 2  # 2x tier size = real fantasy starters + immediate backups
+        frames = []
+        for yr, yr_df in df[df["position"] == pos].groupby("year"):
+            frames.append(yr_df.nlargest(n_per_year, "points"))
+        sub = pd.concat(frames) if frames else df.iloc[0:0]
+        sub = sub[(sub["salary"] > LEAGUE_MIN_SALARY) & (sub["points"] > 0)]
+        median = float(sub["salary"].median()) if len(sub) else float(LEAGUE_MIN_SALARY)
         if len(sub) < 5:
-            fits[pos] = {"a": 0.0, "b": float(sub["salary"].median() if len(sub) else LEAGUE_MIN_SALARY), "n": len(sub)}
+            fits[pos] = {"k": 0.0, "c": median, "n": len(sub), "median": median}
             continue
-        # numpy polyfit (degree 1)
-        import numpy as np
-        a, b = np.polyfit(sub["points"], sub["salary"], 1)
-        fits[pos] = {"a": float(a), "b": float(b), "n": int(len(sub))}
+        log_pts = np.log(sub["points"].values)
+        log_sal = np.log(sub["salary"].values)
+        k, log_c = np.polyfit(log_pts, log_sal, 1)
+        fits[pos] = {"k": float(k), "c": float(np.exp(log_c)), "n": int(len(sub)), "median": median}
     return fits
+
+
+def _predict(fit: dict, points: float) -> float:
+    if points <= 0 or fit["k"] == 0.0:
+        return max(LEAGUE_MIN_SALARY, fit["median"])
+    return max(LEAGUE_MIN_SALARY, fit["c"] * (points ** fit["k"]))
 
 
 def apply_market(df: pd.DataFrame, fits: dict[str, dict]) -> pd.DataFrame:
     out = df.copy()
     out["market_salary"] = out.apply(
-        lambda r: max(LEAGUE_MIN_SALARY, fits[r["position"]]["a"] * r["points"] + fits[r["position"]]["b"]),
+        lambda r: _predict(fits[r["position"]], r["points"]),
         axis=1,
     )
     out["surplus"] = out["market_salary"] - out["salary"]
@@ -138,22 +163,23 @@ def write_report(year: int, df: pd.DataFrame, fits: dict[str, dict], top_n: int 
     lines.append(f"Players analyzed: **{len(df)}**  ·  Avg salary: **${int(df['salary'].mean()):,}**")
     lines.append("")
 
-    lines.append("## Position market curves")
-    lines.append("`predicted_salary = a * points + b` (fit on players with salary > league min)")
+    lines.append("## Position market curves (power law)")
+    lines.append("`predicted_salary = c * points^k` (log-log fit, players with salary > league min). k > 1 = convex / elite premium.")
     lines.append("")
-    lines.append("| Pos | a ($/pt) | b ($) | n |")
+    lines.append("| Pos | k | c | n |")
     lines.append("|---|---:|---:|---:|")
     for pos, f in fits.items():
-        lines.append(f"| {pos} | {f['a']:,.0f} | {f['b']:,.0f} | {f['n']} |")
+        lines.append(f"| {pos} | {f['k']:.2f} | {f['c']:,.1f} | {f['n']} |")
     lines.append("")
 
     lines.append("## Tier $/PPG")
     lines.append(tier_summary(df).to_markdown(index=False))
     lines.append("")
 
-    lines.append(f"## Top {top_n} steals (highest surplus value)")
+    lines.append(f"## Top {top_n} steals (highest surplus value, min 4 scoring weeks)")
     cols = ["name", "position", "franchise", "points", "salary", "market_salary", "surplus", "contract_year"]
-    steals = df.nlargest(top_n, "surplus")[cols]
+    qualifying = df[df["weeks_with_score"] >= 4]
+    steals = qualifying.nlargest(top_n, "surplus")[cols]
     lines.append(_money_md(steals))
     lines.append("")
 
@@ -162,9 +188,9 @@ def write_report(year: int, df: pd.DataFrame, fits: dict[str, dict], top_n: int 
     lines.append(_money_md(overpays))
     lines.append("")
 
-    lines.append(f"## Top {top_n} steals by position")
+    lines.append(f"## Top {top_n} steals by position (min 4 scoring weeks)")
     for pos in SCORING_POSITIONS:
-        sub = df[df["position"] == pos].nlargest(5, "surplus")[cols]
+        sub = qualifying[qualifying["position"] == pos].nlargest(5, "surplus")[cols]
         if sub.empty:
             continue
         lines.append(f"### {pos}")

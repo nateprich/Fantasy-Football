@@ -26,15 +26,18 @@ how the existing JS exporter works and we preserve that behavior in [`../lib/mfl
 Goal: identify steals (high points, low salary) and overpays (low points, high salary).
 
 1. Build per-season dataset: (player, position, salary_escalated, season_points, weeks_with_score).
-2. For each position, fit `salary = a * points + b` using rows where `salary > league_min` (filter out
-   minimum-salary noise). Optionally pool multiple seasons for a more stable curve (`--years-back`).
+2. For each position, fit a **power law** `salary = c * points^k` via log-log linear regression
+   on rows where `salary > league_min` (filters out min-salary noise). `k > 1` produces the
+   convex elite premium that linear fits miss. Optionally pool multiple seasons for a more
+   stable curve (`--years-back`).
 3. Compute `surplus = market_salary - actual_salary`. Positive surplus = team is paying below market
    for the production they got.
 4. Report: top steals/overpays overall and per position, plus tier $/PPG (top-12 QB/TE,
    top-24 RB/WR, top-16 PK/Def).
 
 Limitations:
-- Linear fit understates the convex top of the curve. Could swap to log or piecewise fit later.
+- Power-law fit is much better at the elite tier than linear, but still a smooth fit — true
+  market may have step functions at tier breaks (top-12 QB, top-24 RB, etc).
 - "Market" is the league's own pricing — can be biased by collusion / soft markets. Pooling seasons
   helps. Outside benchmarks (FantasyPros auction values) could be added later.
 - Doesn't account for contract length. A cheap multi-year deal is more valuable than a cheap

@@ -312,6 +312,38 @@ in the report mitigates slot-to-slot variance.
 - **Sample size is small for specific (round × position) cells.** Read those tables as
   signal direction, not precise numbers.
 
+## 5d. Trade fairness evaluator
+
+Combines player NPV and pick value into a single dollar verdict on any trade.
+
+### Method
+
+For each side of the trade:
+1. **Players:** look up current roster row, project trailing points, compute NPV with
+   the same `player_npv` function used in `salary_efficiency.npv`.
+2. **Picks:** look up median realized NPV at that overall slot from the pick value
+   curve (median, not mean — limits outlier pull from a single Mahomes-tier hit).
+   Future-year picks are discounted at the same rate as player NPV.
+3. Sum each side's totals, take the diff, classify into one of four verdict bands.
+
+### Verdict bands
+
+|diff| < $500K → FAIR · < $2M → SLIGHT EDGE · < $5M → CLEAR WIN · $5M+ → LOPSIDED
+
+### Caveats
+
+- **Picks valued at median.** Mean is dragged way up by single elite hits (Mahomes 2.01,
+  Allen 2.09, Puka 3.15). The median is a better "what you should expect" number for a
+  trade, but it understates the lottery-ticket value of high picks.
+- **Player NPV inherits all NPV caveats** (see section 5b): static market salary, no
+  career-arc modeling, single discount rate.
+- **No accounting for roster fit, taxi squad, or strategic timing.** A trade that's
+  -\$1M in raw NPV but consolidates two starters into one elite player and a roster
+  spot can still be a win in real terms.
+- **Doesn't model trade-deadline urgency.** If you're 6-0 and need a piece for a
+  championship run, a -\$2M-NPV trade can be worth it; if you're 2-4 and rebuilding,
+  even +\$2M might not help.
+
 ## 6. Files and where things live
 
 ```
@@ -324,6 +356,8 @@ salary_efficiency/
   npv.py                   Multi-year NPV asset-value model
 draft_value/
   analyze.py               Realized NPV per draft slot, by round/position
+trade_eval/
+  evaluate.py              CLI trade fairness evaluator (combines NPV + pick value)
 cap_health/
   analyze.py               Per-team cap & contract-aging report
 docs/

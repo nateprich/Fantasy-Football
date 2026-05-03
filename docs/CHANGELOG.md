@@ -2,6 +2,37 @@
 
 All meaningful changes to the analytics models. Format: date · commit · summary.
 
+## 2026-05-XX · trade fairness evaluator
+
+Added `trade_eval/evaluate.py` — combines player NPV (from salary_efficiency.npv)
+with the realized pick-value curve (from draft_value.analyze) to value any trade in
+dollars.
+
+Asset syntax:
+- Player: any unambiguous substring of the name. Disambiguates by exact match first,
+  then highest-salary match.
+- Pick: `<year> <round>.<pick>` for a specific slot, or `<year> <round>` for a
+  round-only valuation. Future-year picks are time-discounted at the same rate.
+
+Picks are valued at the **median** historical realized NPV of that slot (not mean) to
+limit single-outlier pull. Falls back to round-level median if the exact slot has no
+history.
+
+Sanity tests:
+- Puka Nacua (3yr/\$574K) for Drake London (4yr/\$7.7M): -\$9.9M swing, "LOPSIDED."
+  Correct — London is the worst contract in the league.
+- Ja'Marr Chase (1yr/\$425K) for Puka Nacua (3yr/\$574K) + 2027 1.05: +\$273K swing,
+  "FAIR." Correct — Chase's elite 1-yr expiring deal balances Puka's cheap 3-yr deal
+  minus the low-EV early 1st.
+- Amon-Ra St. Brown (1yr/\$425K) for Ja'Marr Chase (1yr/\$425K): -\$324K swing, "FAIR."
+  Chase slightly ahead on trailing points; within the fair band.
+
+Verdict bands:
+- |diff| < \$500K: FAIR
+- < \$2M: SLIGHT EDGE
+- < \$5M: CLEAR WIN
+- \$5M+: LOPSIDED
+
 ## 2026-05-XX · draft pick value model
 
 Added `draft_value/analyze.py` — realized-NPV-per-pick model that walks forward from

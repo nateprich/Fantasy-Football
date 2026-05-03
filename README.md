@@ -12,6 +12,7 @@ See [docs/DESIGN.md](docs/DESIGN.md) for design notes and the constitution const
 | `salary_efficiency/` | Joins season fantasy points with escalated salaries; reports steals, overpays, $/PPG by tier. Includes a multi-year NPV model that values every contract as an asset (`npv.py`). |
 | `cap_health/` | Per-team committed cap, top-3 concentration, contract-year distribution, expirations, risk flags. |
 | `draft_value/` | Realized NPV per rookie draft slot 2017–2024. Pick value curve, by round × position, top hits and worst misses. |
+| `trade_eval/` | CLI trade fairness evaluator. Combines player NPV with pick value to grade any trade in dollars. |
 | `Top 30 Salary/` | Original JS exporter (top 30 salary-by-position-by-year .xlsx). Still works; superseded by Python going forward. |
 
 ## Documentation
@@ -44,6 +45,12 @@ python -m salary_efficiency.npv --year 2026 --discount 0.20 --by-team
 
 # Draft pick value curve from 2017–2024 drafts
 python -m draft_value.analyze --start 2017 --through 2024 --years-since 4 --discount 0.20
+
+# Evaluate a trade. Each --side argument is a list of assets (players and/or picks).
+# Player names use substring matching; picks use "<year> <round>.<pick>" or "<year> <round>".
+python -m trade_eval.evaluate --year 2025 \
+    --side-a "Puka Nacua" "2027 1.05" \
+    --side-b "Drake London" "2026 2.07"
 
 # Cap health snapshot for the current season
 python -m cap_health.analyze --year 2026 --week 1

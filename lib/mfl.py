@@ -22,7 +22,7 @@ from .league import (
 
 BASE_URL = "https://www49.myfantasyleague.com"
 USER_AGENT = "fantasy-football-analytics/0.1 (nateprich)"
-REQUEST_DELAY = 1.0
+REQUEST_DELAY = 2.0
 CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache"
 
 
@@ -49,9 +49,15 @@ def fetch(year: int, type_: str, *, use_cache: bool = True, **params) -> dict:
 
     url = f"{BASE_URL}/{year}/export"
     last_err = None
-    for attempt in range(3):
+    for attempt in range(8):
         try:
             r = requests.get(url, params=qs, headers={"User-Agent": USER_AGENT}, timeout=30)
+            if r.status_code == 429:
+                wait = 30 + 30 * attempt  # 30, 60, 90, 120, ... up to ~4 minutes
+                print(f"  429 rate-limited on {type_} {year} attempt {attempt+1}/8, sleeping {wait}s", flush=True)
+                last_err = RuntimeError("HTTP 429")
+                time.sleep(wait)
+                continue
             r.raise_for_status()
             data = r.json()
             if isinstance(data, dict) and data.get("error"):
@@ -62,7 +68,7 @@ def fetch(year: int, type_: str, *, use_cache: bool = True, **params) -> dict:
             return data
         except Exception as e:  # noqa: BLE001
             last_err = e
-            time.sleep(1.5 * (attempt + 1))
+            time.sleep(2.0 * (attempt + 1))
     raise RuntimeError(f"MFL fetch failed: {type_} {year} ({params}): {last_err}")
 
 
@@ -126,6 +132,34 @@ def fetch_rosters(year: int, week: int = 1) -> dict[str, list[dict]]:
             })
         out[fid] = players
     return out
+
+
+def fetch_draft_results(year: int) -> list[dict]:
+    """Rookie draft picks for the given year. Returns list of {round, pick, overall, player_id, franchise}."""
+    data = fetch(year, "draftResults")
+    units = _ensure_list(data.get("draftResults", {}).get("draftUnit"))
+    rows = []
+    for unit in units:
+        for p in _ensure_list(unit.get("draftPick")):
+            try:
+                rd = int(p.get("round") or 0)
+                pk = int(p.get("pick") or 0)
+            except ValueError:
+                continue
+            if rd == 0 or pk == 0:
+                continue
+            # Overall pick = (round-1)*16 + pick (16 teams in this league)
+            overall = (rd - 1) * 16 + pk
+            rows.append({
+                "year": year,
+                "round": rd,
+                "pick": pk,
+                "overall": overall,
+                "slot": f"{rd}.{pk:02d}",
+                "player_id": p.get("player") or None,
+                "franchise_id": p.get("franchise"),
+            })
+    return rows
 
 
 def fetch_franchises(year: int) -> dict[str, dict]:

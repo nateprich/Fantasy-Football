@@ -2,6 +2,41 @@
 
 All meaningful changes to the analytics models. Format: date · commit · summary.
 
+## 2026-05-03 · multi-year NPV surplus
+
+Added `salary_efficiency/npv.py` — values each player's contract as the NPV of remaining
+years of surplus, escalated 10%/yr per the constitution and discounted at a configurable
+rate (default 20%, reflecting dynasty risk).
+
+Key design choices:
+- **Trailing 2-year average points** for projection. Single-year is too noisy (validation
+  showed point variance is huge year-to-year).
+- **Cut option floor.** Per the constitution, waiving costs 50% of current salary now
+  plus a 0–45% next-year hit (scales with years remaining). Each player's contract value
+  is `max(NPV of keeping, -cost of cutting)` — a rational owner cuts if keeping is worse.
+- **No-data players default to NPV = 0.** Without trailing point history (rookies, or
+  veterans coming off injury) the model can't claim steal or overpay, so surplus is zero.
+  Avoids the bug where rookies with no production were treated as fairly priced at the
+  position median market salary, then looked like top-of-league contracts.
+
+Outputs added:
+- Top N most valuable contracts (real producers on cheap multi-year deals)
+- Top N worst contracts (with cut floor applied)
+- Contracts the model says should be cut (NPV worse than cut cost)
+- Best contract by position (top 5 each)
+- `--by-team`: per-franchise roster asset value rollup
+
+First run on 2025 data found:
+- Bucky Irving, Jayden Daniels, Puka Nacua, Chase Brown as top assets — multi-year cheap
+  deals with proven production.
+- Drake London (4yr/$7.7M), Deshaun Watson (4yr/$6.6M), AJ Brown (4yr/$7.6M) as worst
+  contracts — long-tail overpays. Each represents $20M+ of gross negative NPV before
+  the cut floor.
+- 30 contracts league-wide where keep value < cut cost. Most are $7M+ veterans with 1
+  year remaining (Allen, Jacobs, McCaffrey, Adams, Higgins, etc).
+- Defending champ Computer Jocks ranked last in roster asset value — common pattern
+  after a championship run, where you've paid up to win and the bill comes due.
+
 ## 2026-05-03 · `721141a` · Foundation validation suite + PK/Def exclusion
 
 Added `salary_efficiency/validate.py` with four sanity checks:

@@ -211,6 +211,70 @@ These are documented because they will matter when we extend to NPV / trades / e
    $500K player has 1 year remaining or 4. The NPV extension (next project) is exactly
    designed to fix this.
 
+## 5b. Multi-year NPV (the contract-value model)
+
+Single-year surplus tells you how good a contract was *this year*. NPV tells you how
+valuable a contract is *as an asset*. A cheap 1-year deal that produced $2M of surplus
+is worth far less than a cheap 4-year deal at the same surplus, because the cheap 4-year
+deal keeps producing.
+
+### Formula
+
+```
+NPV = Σ_{t=0..n-1}  surplus_t / (1 + r)^t
+where:
+  n          = years remaining on contract
+  surplus_t  = projected_market_salary − actual_salary_t
+  actual_salary_t = current_salary × 1.10^t      (constitution: 10% annual escalation)
+  r          = discount rate (default 20%)
+```
+
+### Design choices
+
+- **Projection: trailing 2-year average points.** Validation showed single-year point
+  variance is huge (R² 0.06–0.16 on the salary-vs-points fit). Pooling stabilizes the
+  projection. Falls back to 1 year of data if 2 aren't available; falls back to current
+  year if no prior data.
+
+- **Discount rate 20% default.** Higher than typical corporate finance because dynasty
+  fantasy has high carrying risk: injury, bust, retirement, scoring rule changes. Adjust
+  via `--discount`. At 0% you're claiming future surplus is as certain as today's; at
+  35%+ you're claiming a multi-year deal is barely worth more than 1 year.
+
+- **Held market salary constant across the projection window.** A player's projected
+  market salary uses their trailing-2-year points and doesn't grow over time. Real
+  career trajectories aren't flat (RBs decline fast, QBs peak late) but a flat
+  assumption is simpler and avoids over-fitting.
+
+- **Cut option as a floor.** Per the constitution, waiving a player costs 50% of
+  current-year salary plus a 0–45% next-year penalty depending on years remaining
+  (1yr=0%, 2yr=15%, 3yr=25%, 4yr=35%, 5yr=45%). A rational owner will cut if `NPV(keep)
+  < -cost(cut)`. Player asset value = `max(NPV_keep, -cut_cost)`. Without this floor,
+  bad multi-year contracts go arbitrarily negative; with it, the worst case is bounded
+  by what cutting would actually cost.
+
+- **No-data players have NPV = 0.** Without trailing point history (rookies, veterans
+  off IR, post-trade no-show) we can't honestly claim a player is a steal or overpay.
+  Set surplus to 0 by definition. This avoids the failure mode where rookies with no
+  production get assigned the position median market salary, producing fake huge NPVs.
+
+### Known limitations of the NPV model
+
+1. **Static market salary.** Doesn't model career arcs. An aging RB at 25 with 200 pts
+   today gets the same projected production at 28. Reality: he's likely worth less.
+
+2. **Static market curve.** The fitted `c × points^k` is the average of the last 3
+   seasons — assumes the market doesn't drift. If the league inflates QB pricing in 2026
+   (which is a real possibility), our 2025-fit model will under-price 2026 QBs.
+
+3. **Cut decision is one-shot.** The model doesn't account for "cut next year for less
+   penalty" optionality. A 4-year deal could be cut after year 1 for a smaller penalty
+   than now. Could improve with a recursive optimal-cut policy, but probably overkill.
+
+4. **No projection uncertainty.** Two players with the same trailing average get the
+   same projection regardless of how volatile their week-to-week scoring was. Could
+   add a confidence band based on weekly variance.
+
 ## 6. Files and where things live
 
 ```
@@ -220,6 +284,7 @@ lib/
 salary_efficiency/
   analyze.py               Production analyzer: outputs steals/overpays per season
   validate.py              Foundation validation suite (a/b/c/d above)
+  npv.py                   Multi-year NPV asset-value model
 cap_health/
   analyze.py               Per-team cap & contract-aging report
 docs/
@@ -250,6 +315,9 @@ python -m salary_efficiency.analyze --year 2025 --years-back 3
 
 # Foundation validation suite (run when changing the model)
 python -m salary_efficiency.validate --years 2021 2022 2023 2024 2025
+
+# Multi-year NPV (asset value of every contract)
+python -m salary_efficiency.npv --year 2026 --discount 0.20 --by-team
 
 # Cap health snapshot for the current season
 python -m cap_health.analyze --year 2026 --week 1

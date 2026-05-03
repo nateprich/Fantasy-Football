@@ -1,5 +1,11 @@
 # Design Notes
 
+> **For the deep "why" behind every modeling decision (including what was tried and rejected),
+> see [`METHODOLOGY.md`](METHODOLOGY.md). For chronological model changes, see
+> [`CHANGELOG.md`](CHANGELOG.md).**
+
+This file is a quick design overview + roadmap. METHODOLOGY.md is the source of truth.
+
 ## League constants (from constitution, May 2026)
 
 - 16 teams, 4 divisions

@@ -176,20 +176,23 @@ def write_report(year: int, df: pd.DataFrame, fits: dict[str, dict], top_n: int 
     lines.append(tier_summary(df).to_markdown(index=False))
     lines.append("")
 
-    lines.append(f"## Top {top_n} steals (highest surplus value, min 4 scoring weeks)")
+    lines.append(f"## Top {top_n} steals (highest surplus value, min 4 scoring weeks; PK/Def excluded — commoditized)")
     cols = ["name", "position", "franchise", "points", "salary", "market_salary", "surplus", "contract_year"]
-    qualifying = df[df["weeks_with_score"] >= 4]
+    skill_only = df[(df["weeks_with_score"] >= 4) & (~df["position"].isin(["PK", "Def"]))]
+    qualifying = skill_only
     steals = qualifying.nlargest(top_n, "surplus")[cols]
     lines.append(_money_md(steals))
     lines.append("")
 
-    lines.append(f"## Top {top_n} overpays (lowest surplus value)")
-    overpays = df.nsmallest(top_n, "surplus")[cols]
+    lines.append(f"## Top {top_n} overpays (lowest surplus value; PK/Def excluded)")
+    overpays = df[~df["position"].isin(["PK", "Def"])].nsmallest(top_n, "surplus")[cols]
     lines.append(_money_md(overpays))
     lines.append("")
 
     lines.append(f"## Top {top_n} steals by position (min 4 scoring weeks)")
     for pos in SCORING_POSITIONS:
+        if pos in ("PK", "Def"):
+            continue
         sub = qualifying[qualifying["position"] == pos].nlargest(5, "surplus")[cols]
         if sub.empty:
             continue

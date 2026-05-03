@@ -43,6 +43,30 @@ Limitations:
 - Doesn't account for contract length. A cheap multi-year deal is more valuable than a cheap
   expiring one. Future: add a multi-year surplus metric using NPV.
 
+## Foundation validation (2021–2025)
+
+Run `python -m salary_efficiency.validate --years 2021 2022 2023 2024 2025` to regenerate.
+Output at [`out/salary_efficiency/validation.md`](../out/salary_efficiency/validation.md).
+
+Findings that justify building on this foundation:
+
+- **(a) Persistence:** Per-player surplus correlates strongly across consecutive years —
+  Pearson r typically 0.4–0.7 across all skill positions. 2023→2024 was the strongest
+  (r = 0.71 overall, 0.83 at QB). 2024→2025 weakest at QB (r = 0.33) but still positive.
+  Conclusion: surplus carries real signal year-to-year, not noise.
+- **(b) Functional form:** Power-law beats linear and log-linear in 5-fold CV MAE for every
+  scoring position. Confirms the switch from the original linear fit was correct.
+- **(c) PAR vs raw points:** Points-Above-Replacement does not improve fit — raw points wins
+  at every skill position. Salary-paid is more closely tied to absolute production than to
+  scarcity premium in this league.
+- **(d) PK/Def commoditized:** k = 0.14 / 0.16 with low salary CV (0.5) confirms kicker and
+  defense salaries are essentially flat regardless of production. Excluded from steal/overpay
+  rankings in production output.
+
+Skill-position fits show low R² (0.06–0.16) — unsurprising given how much realized fantasy
+points vary year over year (injuries, breakouts, busts). The persistence test (a) is the
+better signal-vs-noise check, and it passed.
+
 ## Cap health model
 
 Goal: spot forced-sale candidates and roster-construction problems.

@@ -275,6 +275,43 @@ where:
    same projection regardless of how volatile their week-to-week scoring was. Could
    add a confidence band based on weekly variance.
 
+## 5c. Draft pick value
+
+Picks are major trade currency. Without a price for them, the trade evaluator can't
+compare a "player + 2026 1.05" trade to a player-for-player swap. The draft value
+model assigns a dollar value to each pick slot based on what it has historically
+produced.
+
+### Method
+
+1. For each historical draft year (default 2017–2024), pull all picks from MFL.
+2. For each picked player, walk forward 4 years (covering the rookie contract). For each
+   year the player was on an active roster, compute their (market_salary − actual_salary)
+   surplus using the same per-position power-law curve as the main efficiency model.
+3. NPV that surplus stream at 20%.
+4. Aggregate by overall pick slot (mean and median realized NPV) → pick value curve.
+5. Slice by (round × position) and (pick range × position) to find structural mispricings.
+
+### Why "realized" not "expected"
+
+We don't have rookie projections from the time of each draft. Realized NPV uses what
+actually happened. With ~8 drafts of data per slot, the noise is significant — a single
+elite hit (Mahomes, Allen, Puka) shifts the mean dramatically. The 3-pick rolling smooth
+in the report mitigates slot-to-slot variance.
+
+### Caveats
+
+- **2025 drafts are excluded** from the default run because rookies have only 1 year of
+  data. Their realized NPV would be heavily biased by year-1 outcomes.
+- **Trades reduce the original pick's measured value.** If a team drafts a player and
+  trades him in year 2, the model still credits the original pick for years 3 and 4 of
+  on-roster surplus. This slightly overstates pick value (the originating team only
+  realized 2 years of it). Could be tightened later by checking franchise persistence.
+- **Cuts truncate the value.** Players cut after one bad season vanish from the data
+  for years 2–4, correctly making the pick look bad.
+- **Sample size is small for specific (round × position) cells.** Read those tables as
+  signal direction, not precise numbers.
+
 ## 6. Files and where things live
 
 ```
@@ -285,6 +322,8 @@ salary_efficiency/
   analyze.py               Production analyzer: outputs steals/overpays per season
   validate.py              Foundation validation suite (a/b/c/d above)
   npv.py                   Multi-year NPV asset-value model
+draft_value/
+  analyze.py               Realized NPV per draft slot, by round/position
 cap_health/
   analyze.py               Per-team cap & contract-aging report
 docs/

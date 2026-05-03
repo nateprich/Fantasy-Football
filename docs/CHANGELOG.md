@@ -2,6 +2,33 @@
 
 All meaningful changes to the analytics models. Format: date · commit · summary.
 
+## 2026-05-XX · draft pick value model
+
+Added `draft_value/analyze.py` — realized-NPV-per-pick model that walks forward from
+each historical draft (2017–2024), tracks each picked player's contribution through
+their first 4 years on a roster, and aggregates by overall slot and (round × position).
+
+Method: rookie salary is the constitution's slotted value (e.g. $3.4M for 1.01 RB,
+$575K for 2.01 QB). Realized NPV uses the same per-position power-law market curve
+as the main efficiency model, discounted at 20%/yr.
+
+**Headline findings (2017–2024 drafts):**
+- **Top-4 picks have NEGATIVE average realized NPV.** The rookie salary slot ($3.4M RB,
+  $3.5M WR, $3M QB) is so high that even hits like Saquon Barkley, Breece Hall, and
+  Jonathan Taylor failed to clear it. Median 1.01 NPV = -$5.4M.
+- **Sweet spot is picks 9–28.** Average NPV swings positive at pick 9 and stays there.
+- **QB at 1.13–2.08 is the league's best draft slot:** averages +$1.5M to +$2.1M NPV.
+- **RB at 1.01–1.04 is a -$3.9M average trap.** Every team that took an RB top-4 lost
+  money in expected value, including the "hits."
+- **Best historical contracts came from rounds 2–3, not 1.01–1.04:** Mahomes (2.01),
+  Allen (2.09), Lamar (2.06), Hurts (2.18), Puka (3.15), Kamara (1.10).
+
+Strategic implications: trade DOWN from picks 1–4 unless absolutely targeting a QB.
+Picks 9–28 are mispriced trade currency.
+
+Also: added `fetch_draft_results` to `lib/mfl.py` and stronger 429 backoff (30s base,
+up to 8 retries, ~4 minute cap).
+
 ## 2026-05-03 · multi-year NPV surplus
 
 Added `salary_efficiency/npv.py` — values each player's contract as the NPV of remaining

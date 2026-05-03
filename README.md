@@ -1,0 +1,39 @@
+# Fantasy Football — Analytics
+
+Personal analytics projects for The League (MFL #13522) — a 16-team dynasty/salary-cap league.
+See [docs/DESIGN.md](docs/DESIGN.md) for design notes and the constitution constants in
+[`lib/league.py`](lib/league.py).
+
+## Projects
+
+| Folder | What it does |
+| --- | --- |
+| `lib/` | Shared MFL API client + escalation math + league constants. |
+| `salary_efficiency/` | Joins season fantasy points with escalated salaries; reports steals, overpays, $/PPG by tier. |
+| `cap_health/` | Per-team committed cap, top-3 concentration, contract-year distribution, expirations, risk flags. |
+| `Top 30 Salary/` | Original JS exporter (top 30 salary-by-position-by-year .xlsx). Still works; superseded by Python going forward. |
+
+## Setup
+
+```bash
+cd ~/code/Fantasy-Football
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Usage
+
+```bash
+# Salary efficiency (last completed season, market fit on 1 year of data)
+python -m salary_efficiency.analyze --year 2025
+
+# More stable market fit using 3 seasons of pricing signal
+python -m salary_efficiency.analyze --year 2025 --years-back 3
+
+# Cap health snapshot for the current season
+python -m cap_health.analyze --year 2026 --week 1
+```
+
+Reports are written to `out/<project>/<year>.md` and `.csv`. The `.cache/` directory holds
+raw MFL JSON responses to avoid hammering the API on re-runs (delete it to force a fresh pull).

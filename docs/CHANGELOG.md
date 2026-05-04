@@ -2,6 +2,34 @@
 
 All meaningful changes to the analytics models. Format: date · commit · summary.
 
+## 2026-05-XX · daily projections snapshot + cron consolidation
+
+Added `lib/snapshot_fp_projections.py` and replaced the weekly launchd agent
+with a daily one (`scripts/daily-snapshot.sh`).
+
+**Behavior matrix:**
+| When | What runs |
+| --- | --- |
+| Sun 7am, year-round | rankings (dynasty, redraft, rookie) |
+| Mon-Sat in-season (Sept-Jan) | weekly projections |
+| Sun in-season (Sept-Jan) | weekly projections + rankings |
+| Mon-Sat off-season (Feb-Aug) | nothing |
+| Sun off-season (Feb-Aug) | season-total projections + rankings |
+
+Rationale:
+- In-season projections shift daily because of news, injuries, and the
+  Thursday/Saturday/Sunday/Monday game cadence. Daily snapshots capture
+  the full pre-game/post-game arc.
+- Off-season projections rarely change. Weekly is sufficient.
+- Rankings are weekly regardless — expert consensus moves slowly.
+
+Storage budget: ~600KB/day during the season (×~150 in-season days = ~90MB
+across the season). Manageable; everything commits to git.
+
+This dataset is the foundation for a future add/drop/trade recommendation
+engine. Day-over-day projection deltas + ECR drift + waiver-wire context
+are exactly the signals it needs.
+
 ## 2026-05-XX · weekly FP rankings snapshot
 
 Added `lib/snapshot_fp_rankings.py` and `lib/fp_rank_delta.py`. Snapshots

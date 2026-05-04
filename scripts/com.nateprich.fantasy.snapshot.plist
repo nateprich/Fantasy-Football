@@ -6,14 +6,12 @@
     <string>com.nateprich.fantasy.snapshot</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/nateprich/code/Fantasy-Football/scripts/weekly-snapshot.sh</string>
+        <string>/Users/nateprich/code/Fantasy-Football/scripts/daily-snapshot.sh</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>
-        <key>Weekday</key>
-        <integer>0</integer>
         <key>Hour</key>
-        <integer>8</integer>
+        <integer>7</integer>
         <key>Minute</key>
         <integer>0</integer>
     </dict>

@@ -2,6 +2,35 @@
 
 All meaningful changes to the analytics models. Format: date · commit · summary.
 
+## 2026-05-XX · FantasyPros projections integration
+
+Added `lib/fantasypros.py` — thin client for the FantasyPros public API
+(free non-commercial tier). Endpoint: `/public/v2/json/nfl/<season>/projections`.
+On-disk JSON cache at `.cache/fantasypros/`, key in `.env` as
+`FANTASYPROS_API_KEY`.
+
+The API conveniently returns `mflid` on each player record, so we join directly
+to MFL data without any name-matching gymnastics.
+
+Wired into both forward-looking models:
+- `salary_efficiency/npv.py`: FP season projection now drives projected_pts when
+  available; falls back to trailing-2yr avg per player. New columns
+  `projected_pts` and `projection_source` (FP vs trailing-Ny). Flags: `--no-fp`,
+  `--scoring {points,points_ppr,points_half}`.
+- `trade_eval/evaluate.py`: same flags; player basis now shows projection source.
+
+Historical analyzers (`analyze.py`, `validate.py`, `draft_value/`) are unchanged
+\u2014 those measure realized outcomes, not forward projections.
+
+First run: 356/402 active rostered players matched FP projections for 2025.
+Top NPV jumped meaningfully for FP-bullish breakout candidates (e.g. Bucky Irving
+\$5.2M \u2192 \$7.6M because FP projects 255 pts vs 191 trailing). Stable
+veterans largely unchanged. Drake London still flagged as cut-worthy even with
+bullish FP \u2014 \$7.7M \u00d7 4yr commitment too painful.
+
+Failure modes handled: API down, missing key, mflid missing for a player. All
+fall back gracefully to trailing-avg, model still produces output.
+
 ## 2026-05-XX · trade fairness evaluator
 
 Added `trade_eval/evaluate.py` — combines player NPV (from salary_efficiency.npv)

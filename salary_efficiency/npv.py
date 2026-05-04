@@ -62,11 +62,23 @@ NEXT_YEAR_WAIVER_PENALTY_BY_YEARS_REMAINING = {
 CURRENT_YEAR_WAIVER_HIT = 0.50
 
 
-def projected_points(history_pts: dict[int, dict[str, dict]], player_id: str, target_year: int) -> tuple[float, int]:
-    """Trailing 2-year average of realized points, falling back to 1 year if needed.
+def projected_points(history_pts: dict[int, dict[str, dict]], player_id: str, target_year: int,
+                     fp_projections: dict[str, float] | None = None) -> tuple[float, int]:
+    """Project a player's points for the target year.
 
-    Returns (projected_points, years_used).
+    Source priority:
+      1. FantasyPros season projection (if provided and player is found) — labeled years_used = -1
+      2. Trailing 2-year average of realized points
+      3. Trailing 1-year if only one year is available
+      4. (0.0, 0) if no data
+
+    Returns (projected_points, years_used). years_used = -1 indicates FP source.
     """
+    if fp_projections:
+        fp = fp_projections.get(player_id)
+        if fp and fp > 0:
+            return float(fp), -1
+
     pts_list = []
     for y in (target_year - 1, target_year - 2):
         season = history_pts.get(y, {}).get(player_id)
@@ -168,13 +180,14 @@ def build_npv_dataframe(
     fits: dict,
     history_pts: dict,
     discount_rate: float,
+    fp_projections: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """Build NPV-per-player frame for the target year's roster snapshot."""
     print(f"[{target_year}] building NPV dataframe", file=sys.stderr)
     target_df = build_season_dataframe(target_year, history)
     rows = []
     for _, r in target_df.iterrows():
-        pts_proj, yrs_used = projected_points(history_pts, r["player_id"], target_year)
+        pts_proj, yrs_used = projected_points(history_pts, r["player_id"], target_year, fp_projections)
         if pts_proj == 0 and r["points"] > 0:
             # First-year player or no prior data: use current-year points if available
             pts_proj = r["points"]
@@ -194,8 +207,8 @@ def build_npv_dataframe(
             "franchise": r["franchise"],
             "salary": r["salary"],
             "years_remaining": int(r["contract_year"]),
-            "trailing_pts": round(pts_proj, 1),
-            "trailing_years_used": yrs_used,
+            "projected_pts": round(pts_proj, 1),
+            "projection_source": "FP" if yrs_used == -1 else f"trailing-{yrs_used}y",
             "current_year_pts": round(r["points"], 1),
             "years_priced": out["years_priced"],
             "gross_npv": out["gross_npv"],
@@ -213,11 +226,17 @@ def write_report(year: int, df: pd.DataFrame, discount: float, top_n: int, by_te
     df.sort_values("value", ascending=False).to_csv(csv, index=False)
 
     skill = df[~df["position"].isin(["PK", "Def"])].copy()
-    cols = ["name", "position", "franchise", "salary", "years_remaining", "trailing_pts", "value", "gross_npv"]
+    cols = ["name", "position", "franchise", "salary", "years_remaining", "projected_pts", "projection_source", "value", "gross_npv"]
+
+    fp_count = (df["projection_source"] == "FP").sum()
+    proj_label = (
+        f"FantasyPros projection for {fp_count}/{len(df)} players, trailing-avg fallback for the rest"
+        if fp_count > 0 else "trailing 2-yr avg points"
+    )
 
     lines = [
         f"# Multi-Year NPV Surplus — {year}",
-        f"Discount rate: **{discount:.0%}**  ·  Projection: trailing 2-yr avg points  ·  PK/Def excluded",
+        f"Discount rate: **{discount:.0%}**  ·  Projection: {proj_label}  ·  PK/Def excluded",
         "",
         "Per-player asset value: NPV of remaining contract years (10%/yr salary escalation, "
         "discounted at the configured rate), floored at the cut option value. Higher = more "
@@ -293,10 +312,25 @@ def main():
     p.add_argument("--history-start", type=int, default=2017, help="Earliest year for auction/BBID lookback")
     p.add_argument("--top", type=int, default=15)
     p.add_argument("--by-team", action="store_true", help="Include per-team asset value summary")
+    p.add_argument("--no-fp", action="store_true",
+                   help="Disable FantasyPros projections; use trailing-avg only")
+    p.add_argument("--scoring", default="points_ppr",
+                   choices=["points", "points_ppr", "points_half"],
+                   help="FantasyPros scoring system to pull (default: full PPR)")
     args = p.parse_args()
 
     print(f"Loading historical bids {args.history_start}..{args.year}...", file=sys.stderr)
     history = mfl.HistoricalBids.load(args.history_start, args.year)
+
+    fp_projections = None
+    if not args.no_fp:
+        try:
+            from lib.fantasypros import projected_points_by_mflid
+            print(f"Loading FantasyPros projections for {args.year} ({args.scoring})...", file=sys.stderr)
+            fp_projections = projected_points_by_mflid(args.year, scoring=args.scoring)
+            print(f"  loaded {len(fp_projections)} player projections", file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print(f"  WARN: FantasyPros load failed ({e}); falling back to trailing-avg", file=sys.stderr)
 
     # Build season dataframes for market fit AND for trailing projections
     market_frames = []
@@ -318,6 +352,7 @@ def main():
         fits=fits,
         history_pts=history_pts,
         discount_rate=args.discount,
+        fp_projections=fp_projections,
     )
     write_report(args.year, npv_df, args.discount, args.top, args.by_team)
 

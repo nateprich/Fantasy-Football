@@ -104,8 +104,9 @@ def value_pick(pick: dict, picks_df: pd.DataFrame, discount: float) -> dict:
     }
 
 
-def value_player(player_row: pd.Series, history_pts: dict, fits: dict, target_year: int, discount: float) -> dict:
-    pts_proj, yrs_used = projected_points(history_pts, player_row["player_id"], target_year)
+def value_player(player_row: pd.Series, history_pts: dict, fits: dict, target_year: int,
+                 discount: float, fp_projections: dict[str, float] | None = None) -> dict:
+    pts_proj, yrs_used = projected_points(history_pts, player_row["player_id"], target_year, fp_projections)
     if pts_proj == 0 and player_row["points"] > 0:
         pts_proj = player_row["points"]
     out = player_npv(
@@ -121,8 +122,8 @@ def value_player(player_row: pd.Series, history_pts: dict, fits: dict, target_ye
         "position": player_row["position"],
         "salary": player_row["salary"],
         "years_remaining": int(player_row["contract_year"]),
-        "trailing_pts": round(pts_proj, 1),
-        "trailing_years_used": yrs_used,
+        "projected_pts": round(pts_proj, 1),
+        "projection_source": "FP" if yrs_used == -1 else f"trailing-{yrs_used}y",
         "npv": out["value"],
         "gross_npv": out["gross_npv"],
         "would_cut": out["would_cut"],
@@ -137,6 +138,9 @@ def main():
     p.add_argument("--side-b", nargs="+", required=True, help="Assets going to Side B (their team)")
     p.add_argument("--years-back", type=int, default=3, help="Seasons to pool for market fit")
     p.add_argument("--history-start", type=int, default=2017)
+    p.add_argument("--no-fp", action="store_true", help="Disable FantasyPros projections")
+    p.add_argument("--scoring", default="points_ppr",
+                   choices=["points", "points_ppr", "points_half"])
     args = p.parse_args()
 
     if not PICK_VALUE_CSV.exists():
@@ -161,6 +165,15 @@ def main():
     fits = fit_position_market(pd.concat(market_frames, ignore_index=True))
     current_df = market_frames[0]  # target year's roster snapshot
 
+    fp_projections = None
+    if not args.no_fp:
+        try:
+            from lib.fantasypros import projected_points_by_mflid
+            fp_projections = projected_points_by_mflid(args.year, scoring=args.scoring)
+            print(f"FantasyPros: loaded {len(fp_projections)} projections for {args.year}", file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print(f"WARN: FantasyPros load failed ({e}); using trailing-avg", file=sys.stderr)
+
     sides = {"A": args.side_a, "B": args.side_b}
     valued = {"A": [], "B": []}
     cap_swing = {"A": 0.0, "B": 0.0}
@@ -177,12 +190,12 @@ def main():
                     print(f"WARN: could not resolve player '{asset['query']}'", file=sys.stderr)
                     valued[label].append({"type": "PLAYER", "label": asset["query"], "value": 0, "basis": "UNKNOWN"})
                     continue
-                pv = value_player(row, history_pts, fits, args.year, args.discount)
+                pv = value_player(row, history_pts, fits, args.year, args.discount, fp_projections)
                 valued[label].append({
                     "type": "PLAYER",
                     "label": pv["name"],
                     "value": pv["npv"],
-                    "basis": f"{pv['position']} ${int(pv['salary']):,} × {pv['years_remaining']}y, {pv['trailing_pts']} trailing pts",
+                    "basis": f"{pv['position']} ${int(pv['salary']):,} × {pv['years_remaining']}y, {pv['projected_pts']} pts ({pv['projection_source']})",
                     **pv,
                 })
                 cap_swing[label] += float(pv["salary"])

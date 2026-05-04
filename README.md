@@ -31,6 +31,16 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### FantasyPros projections (optional but recommended)
+
+NPV and trade_eval will use FantasyPros expert-consensus projections when available,
+falling back to trailing-average otherwise. To enable:
+
+1. Apply for a free non-commercial API key at https://api.fantasypros.com/
+2. Drop it in `.env` as `FANTASYPROS_API_KEY=your_key_here`
+
+`.env` is gitignored. To disable, pass `--no-fp` to either CLI.
+
 ## Usage
 
 ```bash

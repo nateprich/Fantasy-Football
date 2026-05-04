@@ -272,8 +272,27 @@ where:
    than now. Could improve with a recursive optimal-cut policy, but probably overkill.
 
 4. **No projection uncertainty.** Two players with the same trailing average get the
-   same projection regardless of how volatile their week-to-week scoring was. Could
-   add a confidence band based on weekly variance.
+  same projection regardless of how volatile their week-to-week scoring was. Could
+  add a confidence band based on weekly variance.
+
+### Projection source: FantasyPros (when available)
+
+When `FANTASYPROS_API_KEY` is set in `.env`, NPV and trade_eval pull the FantasyPros
+expert-consensus season projection for the target year and use that as
+`projected_pts` instead of trailing-2yr average. The FP API returns `mflid` per
+player, so the join is direct and reliable.
+
+Behavior:
+- FP projection wins when available; per-player fallback to trailing-avg.
+- `--no-fp` flag forces trailing-avg only.
+- `--scoring {points, points_ppr, points_half}` selects the scoring system to pull
+  (default: full PPR).
+- API outage or missing key → graceful fallback, no crash.
+
+This is a strict improvement on year-1 projection; year-2+ in NPV still assumes flat
+production through the contract (FP doesn't publish multi-year projections).
+Historical analyzers (`analyze.py`, `validate.py`, `draft_value/`) are intentionally
+unaffected — they measure what *did* happen, not what was projected.
 
 ## 5c. Draft pick value
 

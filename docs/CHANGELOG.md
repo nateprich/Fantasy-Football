@@ -2,6 +2,29 @@
 
 All meaningful changes to the analytics models. Format: date · commit · summary.
 
+## 2026-05-XX · weekly FP rankings snapshot
+
+Added `lib/snapshot_fp_rankings.py` and `lib/fp_rank_delta.py`. Snapshots
+get committed to git so the longitudinal dataset survives disk failures.
+
+10 ranking types saved per snapshot:
+- dynasty (overall + per-position QB/RB/WR/TE)
+- redraft (overall)
+- rookie (per-position QB/RB/WR/TE; the "ALL" position is rejected for the
+  rookie type)
+
+Scheduled via launchd: `com.nateprich.fantasy.snapshot` runs Sundays at
+8am PT. Wrapper script auto-commits and pushes after each successful pull.
+First baseline snapshot taken 2026-05-03 (mid-rookie-draft) — exactly the
+right moment to anchor the time series.
+
+The intent is to use this longitudinal data later to:
+- See how dynasty ECR drifts over the offseason and through key events
+- Test whether ranks at draft time predict end-of-season production
+- Measure how fast experts react to news vs lag it
+- Decide if/when to incorporate ECR into the NPV model as an
+  age/upside-adjustment factor
+
 ## 2026-05-XX · FantasyPros projections integration
 
 Added `lib/fantasypros.py` — thin client for the FantasyPros public API

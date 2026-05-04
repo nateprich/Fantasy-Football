@@ -20,6 +20,7 @@ See [docs/DESIGN.md](docs/DESIGN.md) for design notes and the constitution const
 - [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) — **Read this first.** The deep "why" behind every modeling decision, what was tried and rejected, validation results, known limitations.
 - [`docs/DESIGN.md`](docs/DESIGN.md) — High-level design + roadmap.
 - [`docs/CHANGELOG.md`](docs/CHANGELOG.md) — Chronological model changes.
+- [`docs/BACKLOG.md`](docs/BACKLOG.md) — Future ideas parked for later.
 - [`out/salary_efficiency/validation.md`](out/salary_efficiency/validation.md) — Most recent foundation validation run.
 
 ## Setup

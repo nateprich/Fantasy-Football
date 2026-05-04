@@ -330,6 +330,79 @@ in the report mitigates slot-to-slot variance.
   for years 2–4, correctly making the pick look bad.
 - **Sample size is small for specific (round × position) cells.** Read those tables as
   signal direction, not precise numbers.
+- **The model UNDERSTATES pick value going forward (2026+).** See section 5c-bis.
+
+## 5c-bis. Pick value with rookie extensions (2026+ rule change, not yet modeled)
+
+The historical pick value model values each pick through 4 years of rookie contract.
+Starting in 2026, the constitution adds two new mechanisms that meaningfully extend
+the value of a hit:
+
+1. **Rookie Extensions.** Any drafted player can get a 2-year extension at:
+   `extension_salary = (top-5 positional avg × 2) ÷ (years_remaining + 2)`
+   then escalating 10%/yr. Empirically this works out to roughly **50-65% of free-agent
+   market salary** for years 5-6 of the contract.
+2. **5th-year team option** for 1st-round picks (2026+): one extra year at top-10
+   positional avg. Cheaper than free-agent market.
+
+Neither is in the historical realized-NPV curve from `draft_value/`. The historical
+data set ended in 2024, before either rule existed.
+
+### Approximate adjustment
+
+For a hit at the sweet spot (1.05–2.08), extension-eligible years 5–6 add roughly:
+- Year 5: market $5M − ext $2.5M = +$2.5M surplus  →  PV at 20% disc, t=4: ~$1.2M
+- Year 6: market $5.5M − ext $2.75M = +$2.75M surplus  →  PV at t=5: ~$1.1M
+- Combined: **~+$2.3M per hit** before discount-rate adjustments
+
+### Why we haven't formally added this to the model
+
+- Sample size is zero (the rule is brand new). Calibration would be guesswork.
+- The +$1M-per-hit estimate is order-of-magnitude correct but not precise.
+- Adding speculative future-rule premiums to a historically-grounded model adds noise
+  without being verifiable for ~3-4 years.
+
+We'll revisit once 2026 rookies have actually been extended (2028+) and we can
+measure the realized impact. Until then, treat all pick values from `draft_value/`
+as a **conservative floor** — not the ceiling.
+
+## 5c-ter. Free-agency auction salary distribution (reference data)
+
+The auction history (2021-2025, n=583) shows free agency is **bimodal**:
+
+| Bid range | % of auctions |
+| --- | --- |
+| $425K (league min) | 40.8% |
+| $425K-$500K | 47.0% |
+| $425K-$1M | 69.0% |
+| $5M+ | 11.8% |
+
+Most acquisitions are min-bid depth, with ~12% being stud 1-year rentals at $5M+.
+The middle of the distribution is sparse.
+
+This means salary-efficiency analysis on free-agent contracts faces a sample
+issue: there's no real "mid-tier" FA contract to compare against. The model fits
+through these salaries cleanly because the power-law curve handles both ends, but
+note that any conclusions about $1M-$5M FA value come from a thin slice of data.
+
+## 5c-quat. 3rd-round pick outcome distribution (reference data)
+
+For empirical reference, here's the realized NPV distribution of 3rd-round picks
+(2017-2024, n=115):
+
+| Outcome | Frequency | Avg NPV |
+| --- | --- | --- |
+| Bust (NPV < 0, waived) | 24% | -$225K (50% waiver penalty) |
+| Replacement-level depth ($0 NPV) | 42% | $0 |
+| Modest contributor ($0-500K NPV) | 12% | +$250K |
+| Solid depth ($500K-1M NPV) | 7% | +$750K |
+| Steal ($1M+ NPV) | 15% | +$1.5M+ |
+
+Aggregate: **mean NPV +$418K, median $0.** The 15% of picks that hit drive
+all the value. This shows up in the smoothed curve in `draft_value/` as the
+~$300-500K average value at picks 33-48.
+
+
 
 ## 5d. Trade fairness evaluator
 

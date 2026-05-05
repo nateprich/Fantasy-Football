@@ -43,6 +43,8 @@ daily data flowing (i.e. starting ~Sept-Oct 2026).
 
 ## Other ideas
 
+- **Auction prep / max-bid module.** See dedicated section below — the largest
+  unbuilt project, slated for January 2027 build.
 - **Aging curves.** NPV currently holds projected market salary flat through a
   multi-year contract. Real career arcs differ by position (RBs decline at 28+, QBs
   peak at 28-32). Could fit per-position aging curves from the historical dataset and
@@ -64,3 +66,45 @@ daily data flowing (i.e. starting ~Sept-Oct 2026).
   losses; not currently modeled in pick value or trade eval.
 - **Roster construction view.** Pair `cap_health` with `npv` to flag teams with
   structural weakness (e.g., cap-flush but with $0 of multi-year asset value).
+
+## Auction prep / max-bid module
+
+Free-agent auction starts the 3rd Thursday in March. Build in late January so
+it's ready for bidding.
+
+### What the existing exporter does
+The `Top 30 Salary` JS exporter pulls top 30 salaries by position by year,
+escalation-adjusted. Useful but per-position-average — not tied to per-player
+projections.
+
+### What to build
+
+**Module 1: Per-player max-bid calculator (`auction_prep/max_bid.py`)**
+
+Given a player + contract length, output the bid that keeps the contract
+NPV-positive at the configured discount rate.
+
+```
+Player X
+1-yr: market $4.2M → max bid $3.4M
+2-yr: NPV $7.1M → max bid $5.7M
+3-yr: NPV $8.9M → max bid $7.1M
+```
+
+Reuses `salary_efficiency.npv` and `lib.fantasypros`. Outputs a CSV ranked by
+position with max bids at 1/2/3/4/5-yr terms.
+
+**Module 2: Tier curves with confidence bands**
+
+Replace the top-30 eyeballing with 25th / 50th / 75th percentile bands per
+(position, production tier). Helps with bid pacing.
+
+**Module 3: League cap-stress index**
+
+Pre-auction, compute each team's projected cap room. Aggregate signal:
+fewer cap-flush teams → softer market, more cap-flush teams → inflation.
+
+### Constraints / what NOT to build
+- No ML price predictor — sample size too small.
+- No KeepTradeCut scraping — fragile, TOS-dubious.
+- No real-time bid agent — async 36-hour auction windows.

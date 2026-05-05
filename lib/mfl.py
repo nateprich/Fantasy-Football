@@ -224,7 +224,8 @@ def fetch_season_points(year: int, weeks: Iterable[int] = range(1, 18)) -> dict[
         try:
             wk = fetch_weekly_results(year, w)
         except RuntimeError as e:
-            if "Invalid week" in str(e):
+            msg = str(e)
+            if "Invalid week" in msg or "503" in msg or "404" in msg:
                 break
             raise
         for pid, pts in wk.items():

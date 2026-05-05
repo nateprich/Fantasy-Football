@@ -74,8 +74,8 @@ def main():
                    help="Surplus margin (e.g. 0.10 = bid 10% under NPV-zero)")
     p.add_argument("--year", type=int, default=date.today().year,
                    help="Season for projections")
-    p.add_argument("--years-back", type=int, default=3,
-                   help="Seasons to pool for the market fit")
+    p.add_argument("--years-back", type=int, default=5,
+                   help="Seasons to pool for the market fit (default 5)")
     p.add_argument("--scoring", default="points_ppr",
                    choices=["points", "points_ppr", "points_half"])
     args = p.parse_args()

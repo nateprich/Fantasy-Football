@@ -49,14 +49,17 @@ def build_season_dataframe(year: int, history: mfl.HistoricalBids) -> pd.DataFra
     try:
         rosters_w14 = mfl.fetch_rosters(year, week=14)
     except RuntimeError as e:
-        if "Invalid week" in str(e):
+        msg = str(e)
+        # W14 doesn't exist for current/future seasons (Invalid week, 503, etc.)
+        if "Invalid week" in msg or "503" in msg or "404" in msg:
             rosters_w14 = {}
         else:
             raise
     try:
         season_pts = mfl.fetch_season_points(year)
     except RuntimeError as e:
-        if "Invalid week" in str(e):
+        msg = str(e)
+        if "Invalid week" in msg or "503" in msg or "404" in msg:
             season_pts = {}
         else:
             raise

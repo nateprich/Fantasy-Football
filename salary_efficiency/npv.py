@@ -118,19 +118,20 @@ def player_npv(
     position: str,
     fits: dict,
     discount_rate: float,
+    aging_multipliers: list[float] | None = None,
 ) -> dict:
     """Compute NPV components for one player.
 
     Returns dict with: years_priced, gross_npv, cut_cost, value (max of gross_npv vs -cut_cost).
+
+    If `aging_multipliers` is provided, it should be a list of length >= years_remaining
+    where multipliers[t] scales the projected market salary for year-offset t. Year 0 is
+    typically 1.0 (FP projection already accounts for current age); year 1+ apply blended
+    aging from the aging.scoring module.
     """
     if years_remaining <= 0:
-        # Expiring/expired — only this year counts
         years_remaining = 1
 
-    # No production history: we can't claim the player is a steal or an overpay.
-    # Treat market = current salary so surplus defaults to zero. Avoids the bug where
-    # rookies with zero trailing points get the position median market and then look
-    # like top contracts in the league. Also fairly handles veterans coming off injury.
     if projected_pts <= 0:
         return {
             "years_priced": years_remaining,
@@ -144,24 +145,26 @@ def player_npv(
         }
 
     salary_t = current_salary
-    market = predict_market(fits, position, projected_pts)
+    market_base = predict_market(fits, position, projected_pts)
     yearly = []
     npv = 0.0
     for t in range(years_remaining):
+        mult = 1.0
+        if aging_multipliers and t < len(aging_multipliers):
+            mult = aging_multipliers[t]
+        market = market_base * mult
         surplus_t = market - salary_t
-        # The constitution applies escalation to salary; we hold market salary constant
-        # at projected level (a simple "no further development" assumption).
         pv = surplus_t / ((1 + discount_rate) ** t)
         npv += pv
-        yearly.append({"year_offset": t, "salary": round(salary_t), "market": round(market), "surplus": round(surplus_t), "pv": round(pv)})
+        yearly.append({"year_offset": t, "salary": round(salary_t),
+                       "market": round(market), "surplus": round(surplus_t),
+                       "pv": round(pv), "aging_mult": round(mult, 2)})
         salary_t *= (1 + ANNUAL_ESCALATION)
 
-    # Cut option: 50% of today's salary now (PV = full), plus next-year penalty discounted
     pct_next = NEXT_YEAR_WAIVER_PENALTY_BY_YEARS_REMAINING.get(min(years_remaining, 5), 0.0)
     cut_pv = -(CURRENT_YEAR_WAIVER_HIT * current_salary
                + pct_next * current_salary / (1 + discount_rate))
 
-    # Floor: a rational owner cuts if keeping is worse than cutting
     value = max(npv, cut_pv)
     return {
         "years_priced": years_remaining,
@@ -181,24 +184,73 @@ def build_npv_dataframe(
     history_pts: dict,
     discount_rate: float,
     fp_projections: dict[str, float] | None = None,
+    apply_aging: bool = False,
 ) -> pd.DataFrame:
-    """Build NPV-per-player frame for the target year's roster snapshot."""
+    """Build NPV-per-player frame for the target year's roster snapshot.
+
+    When `apply_aging` is True, the NPV calculation uses blended aging multipliers
+    for years 1+ (year 0 unscaled because FP projection already factors current age).
+    Regardless, age + trailing 3yr ratio + aging risk flag are added as columns.
+    """
+    from aging.scoring import (
+        aging_multiplier, aging_risk, player_age,
+        position_medians, trailing_ratio_from_history,
+    )
+
     print(f"[{target_year}] building NPV dataframe", file=sys.stderr)
     target_df = build_season_dataframe(target_year, history)
+
+    # Get player birthdates from MFL metadata
+    print(f"[{target_year}] loading player ages...", file=sys.stderr)
+    raw_players = mfl.fetch(target_year, "players", DETAILS=1)
+    birthdates: dict[str, int] = {}
+    pid_to_pos: dict[str, str] = {}
+    for p in raw_players.get("players", {}).get("player", []):
+        try:
+            bd = int(p.get("birthdate") or 0)
+        except (TypeError, ValueError):
+            bd = 0
+        if bd > 0 and p.get("id"):
+            birthdates[p["id"]] = bd
+        if p.get("id") and p.get("position"):
+            pid_to_pos[p["id"]] = p["position"]
+
+    # Position medians for trailing ratio (across history_pts)
+    pos_medians = position_medians(history_pts, pid_to_pos)
+
     rows = []
     for _, r in target_df.iterrows():
         pts_proj, yrs_used = projected_points(history_pts, r["player_id"], target_year, fp_projections)
         if pts_proj == 0 and r["points"] > 0:
-            # First-year player or no prior data: use current-year points if available
             pts_proj = r["points"]
             yrs_used = 1
+
+        # Aging context
+        age = player_age(birthdates.get(r["player_id"]), target_year)
+        years_left = int(r["contract_year"]) if int(r["contract_year"]) > 0 else 1
+        tr_ratio = trailing_ratio_from_history(
+            r["player_id"], history_pts, r["position"], target_year, pos_medians
+        ) if r["position"] in ("QB", "RB", "WR", "TE") else None
+
+        risk = aging_risk(r["position"], age, years_left, tr_ratio)
+
+        aging_mults = None
+        if apply_aging and age is not None and r["position"] in ("QB", "RB", "WR", "TE"):
+            # Year 0 unscaled (FP projection already reflects current age).
+            # Years 1+ use blended aging multiplier at the player's age in that year.
+            aging_mults = [1.0] + [
+                aging_multiplier(r["position"], age + t, tr_ratio)
+                for t in range(1, years_left)
+            ]
+
         out = player_npv(
             current_salary=r["salary"],
-            years_remaining=int(r["contract_year"]),
+            years_remaining=years_left,
             projected_pts=pts_proj,
             position=r["position"],
             fits=fits,
             discount_rate=discount_rate,
+            aging_multipliers=aging_mults,
         )
         rows.append({
             "player_id": r["player_id"],
@@ -206,7 +258,11 @@ def build_npv_dataframe(
             "position": r["position"],
             "franchise": r["franchise"],
             "salary": r["salary"],
-            "years_remaining": int(r["contract_year"]),
+            "years_remaining": years_left,
+            "age": age,
+            "trailing_3y_ratio": round(tr_ratio, 2) if tr_ratio is not None else None,
+            "aging_risk_score": risk["score"],
+            "aging_risk_flag": risk["flag"],
             "projected_pts": round(pts_proj, 1),
             "projection_source": "FP" if yrs_used == -1 else f"trailing-{yrs_used}y",
             "current_year_pts": round(r["points"], 1),
@@ -226,7 +282,9 @@ def write_report(year: int, df: pd.DataFrame, discount: float, top_n: int, by_te
     df.sort_values("value", ascending=False).to_csv(csv, index=False)
 
     skill = df[~df["position"].isin(["PK", "Def"])].copy()
-    cols = ["name", "position", "franchise", "salary", "years_remaining", "projected_pts", "projection_source", "value", "gross_npv"]
+    cols = ["name", "position", "franchise", "age", "salary", "years_remaining",
+            "projected_pts", "trailing_3y_ratio", "aging_risk_flag",
+            "value", "gross_npv"]
 
     fp_count = (df["projection_source"] == "FP").sum()
     proj_label = (
@@ -317,6 +375,9 @@ def main():
     p.add_argument("--scoring", default="points_ppr",
                    choices=["points", "points_ppr", "points_half"],
                    help="FantasyPros scoring system to pull (default: full PPR)")
+    p.add_argument("--with-aging", action="store_true",
+                   help="Apply blended aging multiplier to year-1+ projected market salary. "
+                        "Age + risk flag are always shown regardless of this flag.")
     args = p.parse_args()
 
     print(f"Loading historical bids {args.history_start}..{args.year}...", file=sys.stderr)
@@ -353,6 +414,7 @@ def main():
         history_pts=history_pts,
         discount_rate=args.discount,
         fp_projections=fp_projections,
+        apply_aging=args.with_aging,
     )
     write_report(args.year, npv_df, args.discount, args.top, args.by_team)
 

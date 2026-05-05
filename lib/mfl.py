@@ -221,7 +221,12 @@ def fetch_season_points(year: int, weeks: Iterable[int] = range(1, 18)) -> dict[
     """player_id -> {points, games, weeks_started_or_scored}."""
     totals: dict[str, dict] = {}
     for w in weeks:
-        wk = fetch_weekly_results(year, w)
+        try:
+            wk = fetch_weekly_results(year, w)
+        except RuntimeError as e:
+            if "Invalid week" in str(e):
+                break
+            raise
         for pid, pts in wk.items():
             t = totals.setdefault(pid, {"points": 0.0, "weeks_with_score": 0})
             t["points"] += pts

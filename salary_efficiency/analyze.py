@@ -46,8 +46,20 @@ def build_season_dataframe(year: int, history: mfl.HistoricalBids) -> pd.DataFra
     players = mfl.fetch_player_metadata(year)
     franchises = mfl.fetch_franchises(year)
     rosters_w1 = mfl.fetch_rosters(year, week=1)
-    rosters_w14 = mfl.fetch_rosters(year, week=14)
-    season_pts = mfl.fetch_season_points(year)
+    try:
+        rosters_w14 = mfl.fetch_rosters(year, week=14)
+    except RuntimeError as e:
+        if "Invalid week" in str(e):
+            rosters_w14 = {}
+        else:
+            raise
+    try:
+        season_pts = mfl.fetch_season_points(year)
+    except RuntimeError as e:
+        if "Invalid week" in str(e):
+            season_pts = {}
+        else:
+            raise
 
     # Merge rosters: prefer the snapshot with higher salary (covers in-season pickups w/ contracts)
     by_player: dict[str, dict] = {}

@@ -335,10 +335,12 @@ in the report mitigates slot-to-slot variance.
 ## 5c-bis. Pick value with rookie extensions (2026+ rule change, not yet modeled)
 
 The historical pick value model values each pick through 4 years of rookie contract.
-Starting in 2026, the constitution adds two new mechanisms that meaningfully extend
-the value of a hit:
+Starting with the 2026 rookie draft, the constitution adds two new mechanisms that
+meaningfully extend the value of a hit (per the commissioner's intent — the
+constitution wording is ambiguous on rookie extensions, but the rule applies to
+2026+ rookies only):
 
-1. **Rookie Extensions.** Any drafted player can get a 2-year extension at:
+1. **Rookie Extensions.** Rookies drafted in 2026 or later can get a 2-year extension at:
    `extension_salary = (top-5 positional avg × 2) ÷ (years_remaining + 2)`
    then escalating 10%/yr. Empirically this works out to roughly **50-65% of free-agent
    market salary** for years 5-6 of the contract.

@@ -1,94 +1,175 @@
 # Design Notes
 
-> **For the deep "why" behind every modeling decision (including what was tried and rejected),
-> see [`METHODOLOGY.md`](METHODOLOGY.md). For chronological model changes, see
-> [`CHANGELOG.md`](CHANGELOG.md).**
+System overview + roadmap. For modeling depth, see [METHODOLOGY.md](METHODOLOGY.md).
+For chronology, see [CHANGELOG.md](CHANGELOG.md). For future ideas, see [BACKLOG.md](BACKLOG.md).
 
-This file is a quick design overview + roadmap. METHODOLOGY.md is the source of truth.
+## League constants (per constitution, May 2026)
 
-## League constants (from constitution, May 2026)
-
-- 16 teams, 4 divisions
+- 16 teams, 4 divisions of 4
 - $45M salary cap, league min $425K
-- Active roster max 22 + 3 practice squad (rookies only, 50% cap hit)
+- Active roster max 22 + 3 practice squad (rookies only, 50% cap hit) = **25 contract slots total**
 - Contracts 1–5 years, 10% annual escalation on Feb 15
-- Starting lineup: 1 QB, 1–4 RB, 1–4 WR, 1–4 TE, 1 PK, 1 Def (9 starters total; 6 flex slots across RB/WR/TE)
-- Auction-style FA bidding (eBay format, $25K min increase)
-- In-season BBID waivers Sun 10pm – Wed 7pm PT
-- Veteran extensions, rookie extensions, 5th-year team option (1st rounders only, 2026+)
-- Waiver penalties scale with years remaining (50% current + 15–45% future)
+- Starting lineup: 1 QB, 1–4 RB, 1–4 WR, 1–4 TE, 1 PK, 1 Def (9 starters; 6 RB/WR/TE flex slots)
+- Auction-style FA bidding (eBay format, 36-hr clock, $25K min increase)
+- In-season BBID waivers Sun 10pm – Wed 7pm PT, then FCFS Wed 7pm – Sun 10am
+- **Rookie extensions** (2026+ rookies only — see note): 2 extra years, top-5 positional avg formula
+- **5th-year team option** (2026+ first-rounders only): one extra year, top-10 positional avg
+- **Compensatory picks** (2026+ drafts only): 3rd-round pick when a drafted player signs elsewhere
+- Veteran extensions sunset Feb 15, 2028
+- Waiver penalties: 50% current-year + 0–45% next-year, scaling with years remaining
 
-All of the above lives in [`../lib/league.py`](../lib/league.py).
+> The constitution's literal text on rookie extensions doesn't restrict to a draft year, but the
+> commissioner has clarified the rule applies to 2026+ rookies only. Pre-2026 rookies on existing
+> rosters are NOT extension-eligible. Documents in this repo treat 2026+ as the eligibility cutoff.
 
-## MFL contractYear semantics
+All constants live in [`../lib/league.py`](../lib/league.py).
 
-`contractYear` from the MFL `rosters` endpoint = **years remaining**, not "which year of the contract".
-The escalation math therefore walks backwards through historical auction + BBID data to find the
-original winning bid, then applies `originalBid * 1.10^(target_year - acquisition_year)`. This is
-how the existing JS exporter works and we preserve that behavior in [`../lib/mfl.py`](../lib/mfl.py).
+## System architecture
 
-## Salary efficiency model
+```
+                            MFL API (cached)
+                            FantasyPros API (cached)
+                                        |
+                                        v
+                     lib/  (clients, escalation math, league constants)
+                                        |
+       +--------------------------+----+----+--------------------------+
+       v                          v         v                          v
+  salary_efficiency/        draft_value/    cap_health/           aging/
+  (market curve fit,        (pick value     (per-team             (population aging
+   per-season surplus,       curve from      cap forecast,         curves +
+   multi-year NPV,           2017-2024)      risk flags)           per-player
+   validation suite)                                               risk score)
+       |                          |                                   |
+       +-------------+------------+-----------------------------------+
+                     v
+              trade_eval/                  auction_prep/
+              (deal grading               (max bid, tier bands,
+               in dollars)                 cap-stress index)
+```
 
-Goal: identify steals (high points, low salary) and overpays (low points, high salary).
+**Data flow:** MFL endpoints (rosters, auction history, weekly results, draft results,
+transactions) get cached as raw JSON to `.cache/<year>/`. FantasyPros projections + rankings
+get cached to `.cache/fantasypros/`. Derived dataframes (season frames, market fits, NPV
+tables) are recomputed each run from cache (~5-10 sec per CLI invocation). Snapshots of FP
+rankings/projections are written daily to `data/fp_*/<date>/` and committed to git as a
+longitudinal dataset.
 
-1. Build per-season dataset: (player, position, salary_escalated, season_points, weeks_with_score).
-2. For each position, fit a **power law** `salary = c * points^k` via log-log linear regression
-   on rows where `salary > league_min` (filters out min-salary noise). `k > 1` produces the
-   convex elite premium that linear fits miss. Optionally pool multiple seasons for a more
-   stable curve (`--years-back`).
-3. Compute `surplus = market_salary - actual_salary`. Positive surplus = team is paying below market
-   for the production they got.
-4. Report: top steals/overpays overall and per position, plus tier $/PPG (top-12 QB/TE,
-   top-24 RB/WR, top-16 PK/Def).
+## Module responsibilities
 
-Limitations:
-- Power-law fit is much better at the elite tier than linear, but still a smooth fit — true
-  market may have step functions at tier breaks (top-12 QB, top-24 RB, etc).
-- "Market" is the league's own pricing — can be biased by collusion / soft markets. Pooling seasons
-  helps. Outside benchmarks (FantasyPros auction values) could be added later.
-- Doesn't account for contract length. A cheap multi-year deal is more valuable than a cheap
-  expiring one. Future: add a multi-year surplus metric using NPV.
+### `lib/`
+- `league.py` — constitution constants
+- `mfl.py` — MFL REST client + escalation math + on-disk cache
+- `fantasypros.py` — FP REST client + cache
+- `snapshot_fp_projections.py` / `snapshot_fp_rankings.py` — daily/weekly snapshot jobs
+- `fp_rank_delta.py` — compare two snapshot dates
 
-## Foundation validation (2021–2025)
+### `salary_efficiency/`
+- `analyze.py` — per-season surplus report (steals/overpays). Power-law market curve fit.
+- `npv.py` — multi-year asset value (NPV of remaining contract years). Reads age + risk flags.
+- `validate.py` — foundation validation (persistence, CV, PAR, reliability)
 
-Run `python -m salary_efficiency.validate --years 2021 2022 2023 2024 2025` to regenerate.
-Output at [`out/salary_efficiency/validation.md`](../out/salary_efficiency/validation.md).
+### `draft_value/`
+- `analyze.py` — realized NPV per draft slot from 2017–2024 picks. Outputs the pick value curve.
 
-Findings that justify building on this foundation:
+### `cap_health/`
+- `analyze.py` — per-team cap, top-3 concentration, contract-year distribution, expirations.
 
-- **(a) Persistence:** Per-player surplus correlates strongly across consecutive years —
-  Pearson r typically 0.4–0.7 across all skill positions. 2023→2024 was the strongest
-  (r = 0.71 overall, 0.83 at QB). 2024→2025 weakest at QB (r = 0.33) but still positive.
-  Conclusion: surplus carries real signal year-to-year, not noise.
-- **(b) Functional form:** Power-law beats linear and log-linear in 5-fold CV MAE for every
-  scoring position. Confirms the switch from the original linear fit was correct.
-- **(c) PAR vs raw points:** Points-Above-Replacement does not improve fit — raw points wins
-  at every skill position. Salary-paid is more closely tied to absolute production than to
-  scarcity premium in this league.
-- **(d) PK/Def commoditized:** k = 0.14 / 0.16 with low salary CV (0.5) confirms kicker and
-  defense salaries are essentially flat regardless of production. Excluded from steal/overpay
-  rankings in production output.
+### `aging/`
+- `fit_curves.py` — per-position aging curves (performance × survival, peak-relative).
+- `scoring.py` — shared module: `player_age()`, `aging_multiplier()`, `aging_risk()`,
+  `trailing_ratio_from_history()`. Used by `salary_efficiency.npv`.
 
-Skill-position fits show low R² (0.06–0.16) — unsurprising given how much realized fantasy
-points vary year over year (injuries, breakouts, busts). The persistence test (a) is the
-better signal-vs-noise check, and it passed.
+### `trade_eval/`
+- `evaluate.py` — CLI grader. Combines player NPV with pick-value curve. Verdict bands.
+- `pick_inventory.py` — league-wide pick inventory (2026 remaining + 2027) with values.
 
-## Cap health model
+### `auction_prep/`
+- `max_bid.py` — per-player max bid in three flavors: NPV-disciplined / cap-relative / market p75.
+- `tier_bands.py` — production-tier salary p25/p50/p75 per position.
+- `cap_stress.py` — pre-auction league cap forecast and inflation/deflation signal.
 
-Goal: spot forced-sale candidates and roster-construction problems.
+## Key models in 30 seconds each
 
-For each team:
-- Committed / remaining cap, remaining as % of cap.
-- Top-3 player share of cap (concentration risk).
-- Contract-year distribution: expiring (1), Y2, Y3+. Avg years remaining.
-- Risk flags: `OVER_CAP`, `CAP_STRESS` (<$1M), `TOP_HEAVY` (top 3 ≥ 50%), `THIN_ROSTER` (<20),
-  `EXPIRATION_CLIFF` (≥8 expiring).
+**Power-law market curve** (`salary = c * points^k` per position, log-log fit on the productive
+tail). Replaces eyeball-the-top-30 with a per-player price tied to projected production.
 
-Plus a league-wide position market summary (rostered top-10 / top-30 average salary by position).
+**NPV** (sum of `(market − salary_t) / (1+r)^t` over remaining years). Cut option floors the
+loss. Defaults to 20% discount rate. Optional aging multiplier on year-1+ market salary.
 
-## Roadmap (not built yet)
+**Pick value curve** (smoothed historical realized NPV per overall slot). Picks 1-8 are net
+negative (rookie tax > production); picks 9-26 are roughly fungible at $700K-$1M; picks 27-48
+gradually decline. Trade eval uses median curve value with future-year discounting.
 
-- Trade fairness evaluator (NPV of multi-year surplus on both sides).
-- Rookie-pick value chart calibrated on 2017–25 hit rate (which picks turned into top-30-salary players).
-- Auction inflation tracker year over year.
-- Tag/extension value calculator (matching constitution formulas).
+**Aging curves** (population-level performance × survival, peak-relative). Used as a *risk
+flag* (LOW/MED/HIGH/EXTREME) by default. Optional NPV multiplier via `--with-aging`.
+
+**Trade verdict bands** (|diff| <$500K = FAIR, <$2M = SLIGHT EDGE, <$5M = CLEAR WIN, $5M+ =
+LOPSIDED). User decides; tool grades.
+
+**Auction max bids** (three flavors: NPV-zero breakeven, cap-relative scaling by your league
+percentile, market p75 from tier history). User picks based on context.
+
+## What's intentionally NOT modeled
+
+- **Career arcs in year-1 projection.** FP already factors current age into next-year numbers.
+  Aging curves handle years 2+ only.
+- **External market benchmarks.** No KeepTradeCut scraping (TOS-dubious), no FantasyPros
+  dynasty rank-to-dollar calibration (would need a calibration model). The market is the
+  league's own history. Dynasty ECR is snapshotted daily for future longitudinal analysis.
+- **ML auction price prediction.** Sample size too small (583 auctions over 5 years).
+- **Real-time bid agent.** Auction is async over 36-hour windows; manual is fine.
+- **Per-player matchup adjustments / weekly variance.** Not yet. The recommendation engine
+  in BACKLOG would need this.
+
+## Validation status (last run on 2017–2025)
+
+- **Persistence (year-over-year surplus correlation):** Pearson r 0.44–0.71 overall, 0.08–0.83
+  per position. Surplus is real signal.
+- **Functional form (5-fold CV MAE):** power-law wins at every position over linear and
+  log-linear.
+- **Points vs. PAR:** raw points wins at every position. (Unusual vs. mainstream fantasy
+  literature — likely an exploitable inefficiency in this league.)
+- **PK/Def reliability:** k≈0.15, salary CV 0.5 → commoditized. Excluded from rankings.
+
+See [`out/salary_efficiency/validation.md`](../out/salary_efficiency/validation.md) for the
+full validation report.
+
+## Roadmap
+
+Built and operational:
+- [x] Salary efficiency with validation
+- [x] Multi-year NPV
+- [x] Cap health
+- [x] Draft pick value curve
+- [x] Trade fairness evaluator
+- [x] Pick inventory across the league
+- [x] FantasyPros projections integration
+- [x] Daily snapshot system + auto-commit to git
+- [x] Aging curves + per-player risk flag in NPV
+- [x] Auction prep (max bid, tier bands, cap stress)
+
+In [BACKLOG.md](BACKLOG.md):
+- Tag/extension calculator (high priority for Feb 2027 decisions)
+- Recommendation engine (in-season add/drop/trade alerts)
+- Aging curves wired into year-1 projection
+- Roster construction view (cap_health × NPV cross-cut)
+- Trade-deadline urgency adjustment
+- Opponent-side trade simulator
+- Historical sweep 2021–2025 (cosmetic)
+- Compensatory pick handler in trade eval
+
+## Notes on accuracy and limits
+
+- The model UNDERSTATES 2026+ pick value — extension premium isn't priced in. Treat the
+  pick curve as a conservative floor for 2026+ picks specifically.
+- Linear / smoothed curves can't capture step functions at tier breaks. WR p75 in tier 1
+  is $7.7M but tier 2 is $4.2M — a real cliff the smooth fit misses.
+- Single-year NPV reports are 2026 snapshots. Don't optimize against them in isolation —
+  the model operates on one year at a time but trades and contracts span multiple.
+- PK/Def carry option value (insurance + trade bait) the model can't quantify. Their NPV
+  near zero is fine; don't read it as "always cut to min depth."
+- Aging curves are population averages. They UNDER-penalize elite/HOF-caliber players
+  (the curves don't see selection bias on quality). The blended `--with-aging` mode and
+  the risk flag both attempt to compensate, but the user should override when the model's
+  signal is obviously wrong on a specific player.

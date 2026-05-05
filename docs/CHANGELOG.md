@@ -2,6 +2,93 @@
 
 All meaningful changes to the analytics models. Format: date · commit · summary.
 
+## 2026-05-04 · methodology clarification — rookie extension eligibility
+
+Reverted a brief speculative re-read of the constitution. The rookie extension rule
+applies to **2026+ rookies only**, per commissioner clarification, even though the
+constitution's literal text doesn't restrict to a draft year. The 5th-year option
+and compensatory pick rules are explicitly 2026+ only and were already correctly
+documented.
+
+Implication: pre-2026 rookies on existing rosters (Drake Maye, Bucky Irving,
+Puka Nacua, Harold Fannin, etc.) are NOT extension-eligible. Their multi-year
+contract value caps at the historical curve, no extension premium applies.
+
+## 2026-05-04 · aging curves wired into NPV (risk flag default + opt-in multiplier)
+
+`aging/fit_curves.py` produces population-level aging curves: per-(position, age)
+performance × survival, peak-relative. n=1849 player-seasons across 2017-2025.
+
+`aging/scoring.py` exposes shared helpers: `player_age()`, `aging_multiplier()`
+(blended with elite gating), `aging_risk()` (composite score + LOW/MED/HIGH/EXTREME
+flag), `trailing_ratio_from_history()`.
+
+Integration into `salary_efficiency.npv`:
+- Always: adds `age`, `trailing_3y_ratio`, `aging_risk_flag` columns to the report.
+- New `--with-aging` flag: applies blended aging multiplier to year-1+ projected
+  market salary. Year 0 unscaled (FP projection already accounts for current age).
+
+Risk score formula: `position_age_risk × (0.5 + contract_yrs/5 × 0.5) ×
+(1 - elite_protection × 0.3)`. Position thresholds: RB cliff at 28, WR at 30,
+TE at 31, QB at 35.
+
+Headline aging findings (2017-2025):
+- All 4 positions peak in **expected** value at age 24 (perf × survival).
+- RB falls off a cliff: 100% expected at 24 → 76% at 26 → 50% at 27 → 33% at 28.
+- WR is durable: 96-100% through 25, 78% at 26, 75% at 27.
+- TE noisiest. QB has elite-survivor effect (Brady, Rodgers, etc.).
+
+Caveats:
+- Curves are survivorship-conditional; they UNDER-penalize elite/HOF players.
+- Risk flag uses position-aware thresholds + trailing-3y elite gating to
+  partially compensate. The combination flags Aaron Jones / Kareem Hunt /
+  Keenan Allen / Henry / Mike Evans / Kupp / Hill correctly while leaving
+  Allen / Lamar / Bijan / Puka / Drake Maye as LOW.
+
+## 2026-05-04 · auction_prep package (max_bid, tier_bands, cap_stress)
+
+Three modules powering free-agent auction decisions:
+
+**`max_bid.py`** — per-player max bid in 3 flavors per contract length:
+1. NPV-disciplined (breakeven at NPV=0, conservative)
+2. Cap-relative (scaled by user's cap-room percentile vs. league)
+3. Market p75 (75th-percentile auction price at the player's projected tier)
+
+The three numbers let the user decide based on context: deal-hunting, surplus-cap
+deployment, or must-win-this-auction.
+
+**`tier_bands.py`** — pooled p25/p50/p75 salary by production tier per position.
+Replaces eyeball-the-top-30 with proper percentile bands.
+
+**`cap_stress.py`** — projects each franchise's committed cap into next year's
+auction. Aggregates into flush/balanced/stressed buckets and emits a market
+inflation/deflation signal.
+
+First 2027 cap-stress run: 8 teams projected cap-flush → INFLATIONARY market
+expected. Pacific Pigskins projects over cap (forced seller). MCM at $23.8M
+projected room (3rd most in league).
+
+## 2026-05-03 · pick inventory tool (`trade_eval/pick_inventory.py`)
+
+Pulls 2026 remaining picks (from MFL `draftResults`) + 2027 future picks (from
+`futureDraftPicks`), values each at the curve, outputs per-franchise summary
+ranked by total pick asset value. Saved to `out/trade_eval/pick_inventory.csv`.
+
+Useful for pre-trade reconnaissance: who's picks-rich, who's picks-poor.
+
+## 2026-05-XX · current-season offseason data fetch tolerance
+
+`salary_efficiency.analyze.build_season_dataframe` and `mfl.fetch_season_points`
+now gracefully handle missing-data errors for current/future seasons. MFL returns
+"Invalid week" or HTTP 503/404 for week-14 fetches mid-offseason. Previously this
+cascaded into entire-year skips, which silently halved the years-back window.
+
+Now the fetch falls back to W1-only roster + zero realized points for the
+current season. The market fit pools whatever data is available.
+
+Default `--years-back` bumped from 3 to 5 in `auction_prep.max_bid` for more
+stable fits.
+
 ## 2026-05-XX · daily projections snapshot + cron consolidation
 
 Added `lib/snapshot_fp_projections.py` and replaced the weekly launchd agent

@@ -438,34 +438,161 @@ For each side of the trade:
   championship run, a -\$2M-NPV trade can be worth it; if you're 2-4 and rebuilding,
   even +\$2M might not help.
 
+## 5e. Aging curves and per-player risk
+
+Section 5b's NPV holds projected market salary flat across all years of a multi-year
+contract. That ignores aging. We added an aging system that:
+
+1. Fits **population-level aging curves** per position (`aging/fit_curves.py`)
+2. Computes a **per-player risk score** combining position-aware age thresholds,
+   contract length, and elite gating (`aging/scoring.py`)
+3. Surfaces both as columns in NPV reports (always)
+4. Optionally applies a **blended aging multiplier** to year-1+ market salary
+   when `--with-aging` is passed
+
+### The aging curve
+
+For each (player, season), pull realized fantasy points and player age. Bin by integer
+age, compute mean/median per (position, age). Smooth with a 3-age centered rolling mean.
+Two curves emerge:
+
+- **Performance curve** (raw mean / position-peak): how productive a player IS at
+  that age, given they're still rostered. Survivorship-conditional.
+- **Survival curve**: count of distinct players active at each age vs. peak age.
+  Captures wash-out probability.
+- **Expected curve = perf × survival**, peak-normalized: this is the relevant signal.
+
+Sample size n=1849 player-seasons (2017–2025), min 50 pts for inclusion.
+
+### Why peak ages look weird
+
+Performance curves alone show RB peak at 26, WR at 30, TE at 32, QB at 41. That's
+wrong — it reflects survivorship. The expected curves correct this, all peaking at
+24, then declining sharply (especially RB).
+
+### Risk scoring
+
+```
+risk = position_age_risk × (0.5 + contract_yrs/5 × 0.5) × (1 − elite_protection × 0.3)
+```
+
+- `position_age_risk`: hard-coded thresholds per constitution (RB cliff at 28, WR at
+  30, TE at 31, QB at 35).
+- Contract length: longer contracts amplify the age risk because year-N exposure grows.
+- `elite_protection`: scales by `max(0, trailing_3y_ratio − 1.0)`, so elite players
+  (2x median for 3 years running) get up to 30% risk dampening.
+
+Output bands: LOW (<0.12) / MED (0.12–0.30) / HIGH (0.30–0.50) / EXTREME (>0.50).
+
+### The HOF problem
+
+Population aging curves can't tell elite-quality from average-quality. McCaffrey at
+30 with 2.89x trailing ratio is rare; the curve says all 30-year-old RBs decline
+together but he probably won't. The risk flag uses the trailing-3y elite gate to
+partially compensate but isn't perfect. Reading the flag is a starting point, not
+an automatic cut signal.
+
+### Why aging doesn't apply to year-1
+
+FantasyPros projections already factor in current age. Multiplying year-1 by an
+aging mult would double-count. The blend only applies to year-2+ where there's no
+explicit projection.
+
+## 5f. Auction prep (the bidding tools)
+
+Three modules that compose the existing model into auction-time outputs.
+
+### Per-player max bid
+
+Inverts the NPV math: given a projected market salary M, contract length n, and
+discount rate r, solve for the salary s where NPV = 0:
+
+```
+s_breakeven = (Σ 1/(1+r)^t) × M / Σ ((1.10/(1+r))^t)
+```
+
+Then output three flavors:
+
+- **NPV-disciplined**: `s_breakeven × (1 - margin)` — the conservative ceiling
+- **Cap-relative**: `s_breakeven × cap_factor`, where `cap_factor` ∈ {0.95, 1.00,
+  1.10, 1.20} based on user's cap-room percentile vs. league. Justified when you
+  have surplus cap to deploy.
+- **Market p75**: 75th-percentile salary at the player's projected production tier
+  over the last 5 years. The "must-win" bid. Only shown for 1-2yr terms (multi-year
+  overpays compound badly).
+
+User picks one based on situation. The tool grades; it doesn't decide.
+
+### Tier bands
+
+Bin each historical player-season by realized fantasy points using per-position
+thresholds (e.g. RB T1 = ≥280 pts, T2 = 220-279). Compute p25/p50/p75 salary per
+tier. Output replaces "look at the top 30" with proper percentile bands.
+
+The bands are what `max_bid.py` uses for its market-anchored column.
+
+### Cap-stress index
+
+For each franchise: project committed cap into next year (current contracts × 1.10
+escalation, minus expiring contracts). Aggregate into flush (>$15M room), balanced,
+or stressed (<$5M) buckets. Emit a market signal:
+
+- ≥8 cap-flush teams → INFLATIONARY (top-tier pricing 10-20% premium)
+- ≥8 cap-stressed → DEFLATIONARY (bargains in late period)
+- Otherwise → BALANCED
+
+This is genuinely useful context that owners overlook. In a cap-stressed market
+prices fall because fewer aggressive bidders. In a flush market prices climb
+because too much money chasing too few studs.
+
 ## 6. Files and where things live
 
 ```
 lib/
   league.py                Constitution constants (cap, escalation, lineup, etc.)
-  mfl.py                   MFL API client + escalation math + caching
+  mfl.py                   MFL API client + escalation math + on-disk cache
+  fantasypros.py           FantasyPros API client + cache
+  snapshot_fp_*.py         Daily/weekly snapshot jobs (cron via launchd)
+  fp_rank_delta.py         Compare two snapshot dates
 salary_efficiency/
-  analyze.py               Production analyzer: outputs steals/overpays per season
+  analyze.py               Production analyzer: steals/overpays per season
   validate.py              Foundation validation suite (a/b/c/d above)
   npv.py                   Multi-year NPV asset-value model
 draft_value/
   analyze.py               Realized NPV per draft slot, by round/position
 trade_eval/
-  evaluate.py              CLI trade fairness evaluator (combines NPV + pick value)
+  evaluate.py              CLI trade fairness evaluator (NPV + pick value)
+  pick_inventory.py        League-wide pick inventory + per-team totals
 cap_health/
   analyze.py               Per-team cap & contract-aging report
+aging/
+  fit_curves.py            Population aging curves (perf × survival)
+  scoring.py               Per-player aging multiplier + risk score helpers
+auction_prep/
+  max_bid.py               Per-player max bid (3 flavors)
+  tier_bands.py            Production-tier salary p25/p50/p75
+  cap_stress.py            Pre-auction league cap forecast
+  DESIGN.md                Detailed spec for the auction tooling
 docs/
-  DESIGN.md                Project layout + roadmap
+  DESIGN.md                System overview + roadmap
   METHODOLOGY.md           This file. Decisions and rationale.
-  CHANGELOG.md             Chronological model changes.
+  CHANGELOG.md             Chronological model changes
+  BACKLOG.md               Future ideas
 out/
-  salary_efficiency/
-    YYYY.md / YYYY.csv     Per-season analysis outputs
-    validation.md          Most recent validate.py run
-  cap_health/
-    YYYY.md / YYYY_rosters.csv
-.cache/                    On-disk JSON cache of MFL API responses (gitignored)
-Top 30 Salary/             Original JS exporter, untouched and still working.
+  salary_efficiency/       NPV reports, validation
+  cap_health/              Per-team rosters
+  draft_value/             Pick value curve + per-pick CSV
+  aging/                   curves.csv + curves.md
+  auction_prep/            Max-bid CSVs, tier bands, cap-stress forecasts
+  trade_eval/              Pick inventory CSV
+data/
+  fp_snapshots/            Daily/weekly FP rankings (committed to git)
+  fp_projections/          Daily FP projections in-season (committed to git)
+.cache/                    On-disk JSON cache of MFL + FantasyPros responses (gitignored)
+scripts/
+  daily-snapshot.sh        Wrapper script run by launchd
+  com.nateprich.fantasy.snapshot.plist  launchd agent definition
+Top 30 Salary/             Original JS exporter, untouched and still working
 ```
 
 ## 7. How to run things
@@ -474,21 +601,38 @@ Top 30 Salary/             Original JS exporter, untouched and still working.
 cd ~/code/Fantasy-Football
 source .venv/bin/activate
 
-# Single-season salary efficiency report
-python -m salary_efficiency.analyze --year 2025
-
-# Same, but pool 3 seasons of pricing for a more stable market fit
+# === Salary efficiency
 python -m salary_efficiency.analyze --year 2025 --years-back 3
-
-# Foundation validation suite (run when changing the model)
 python -m salary_efficiency.validate --years 2021 2022 2023 2024 2025
-
-# Multi-year NPV (asset value of every contract)
 python -m salary_efficiency.npv --year 2026 --discount 0.20 --by-team
+python -m salary_efficiency.npv --year 2026 --with-aging      # year-2+ aging multipliers
 
-# Cap health snapshot for the current season
+# === Cap health
 python -m cap_health.analyze --year 2026 --week 1
+
+# === Draft pick value
+python -m draft_value.analyze --start 2017 --through 2024 --years-since 4 --discount 0.20
+
+# === Aging curves
+python -m aging.fit_curves --start 2017 --end 2025
+
+# === Trade evaluator
+python -m trade_eval.evaluate --year 2026 \
+    --side-a "Puka Nacua" "2027 1.05" \
+    --side-b "Drake London" "2026 2.07"
+python -m trade_eval.pick_inventory --my-franchise "Midwestside"
+
+# === Auction prep
+python -m auction_prep.max_bid --player "Puka Nacua" --my-team "Midwestside"
+python -m auction_prep.max_bid --position WR --top 30 --my-team "Midwestside"
+python -m auction_prep.tier_bands --position RB --years 2021 2022 2023 2024 2025
+python -m auction_prep.cap_stress --year 2027 --source-year 2026
+
+# === Snapshot tools
+python -m lib.snapshot_fp_rankings              # ad-hoc rankings pull
+python -m lib.snapshot_fp_projections           # ad-hoc projections pull
+python -m lib.fp_rank_delta --type dynasty      # compare snapshot dates
 ```
 
 Outputs are written to `out/<project>/<year>.md` (and CSV). The `.cache/` directory holds
-raw MFL JSON responses; delete it to force a fresh API pull.
+raw MFL + FantasyPros JSON; delete it to force fresh API pulls.

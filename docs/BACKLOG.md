@@ -108,3 +108,37 @@ fewer cap-flush teams → softer market, more cap-flush teams → inflation.
 - No ML price predictor — sample size too small.
 - No KeepTradeCut scraping — fragile, TOS-dubious.
 - No real-time bid agent — async 36-hour auction windows.
+
+## In-season data feeds (build before September)
+
+Two free signals to layer on top of FP projections for the recommendation engine
+(see Recommendation engine section above). Both are higher-signal than parsing
+fantasy newsletter prose.
+
+### NFL injury status surfacing
+
+FantasyPros projections already include injury status fields (`player_injury_status`,
+`player_injury_notes`). We don't currently surface these. In-season they're the
+single most actionable signal — a "Q" or "OUT" for a starter is a 24-hour trade
+window or waiver pickup trigger.
+
+Implementation: ~30 min. Extend `lib/fantasypros.py` to expose injury fields,
+add column to NPV report and trade_eval output, flag in recommendation engine.
+
+### Sleeper trending API
+
+`https://api.sleeper.app/players/nfl/trending/add?lookback_hours=24&limit=25`
+returns the most-added players across all Sleeper leagues in the last 24 hours.
+Free, no auth, real-time market signal.
+
+Use case: catch breakout players 12-24 hours before FP rankings update. If a
+trending-up player is unowned in our league, surface as a waiver target.
+
+Implementation: ~30 min. New `lib/sleeper.py` client, daily snapshot, integrate
+into recommendation engine output.
+
+### What we are NOT doing
+
+- Newsletter ingestion (signal/noise too poor for the time investment)
+- Twitter/X beat reporter scraping (rate-limit/auth nightmare)
+- Pay-walled premium content scraping (legal/TOS issues)

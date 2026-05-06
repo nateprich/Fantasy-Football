@@ -142,3 +142,46 @@ into recommendation engine output.
 - Newsletter ingestion (signal/noise too poor for the time investment)
 - Twitter/X beat reporter scraping (rate-limit/auth nightmare)
 - Pay-walled premium content scraping (legal/TOS issues)
+
+## Pre/post-NFL-draft FP rankings drift study (2027 cycle)
+
+The FantasyPros API returns blended consensus ranks but not individual expert
+rankings or per-expert dates. We can't filter to "only post-draft rankings"
+directly. However, we CAN watch the aggregate min/max/std drift over time.
+
+When some experts update post-draft and others don't, we'd expect:
+- `rank_std` to spike (experts diverge as some incorporate new info)
+- `rank_min` and `rank_max` to widen
+- `rank_ave` to drift toward the post-draft consensus over 2-3 weeks as
+  more experts refresh
+
+If we snapshot rookie rankings DAILY for the 2-3 weeks before AND after
+the 2027 NFL draft (~April 23-26), we can:
+
+1. Establish the pre-draft baseline (where consensus settled)
+2. Watch which players see the biggest std spike post-draft (= most
+   contested by experts who've updated vs. those who haven't)
+3. Identify players whose `rank_min` (their highest believer) jumps post-
+   draft = the experts who've updated are bullish
+4. Spot the inflection point when std re-tightens = "consensus has
+   reformed" and the rankings are usable again
+5. Use the std-spike magnitude as a noise filter: high-std rookies are
+   harder to trust mid-transition
+
+This addresses Nate's correct objection that "rankings dated today doesn't
+mean experts updated today." We can't see expert dates, but we CAN see
+the statistical fingerprint of partial updates.
+
+### Implementation
+- The daily snapshot system already runs. Just need to start a 2027
+  baseline ~3 weeks before the 2027 NFL draft (~early April 2027).
+- Add a script that loads consecutive snapshots and reports per-player
+  std/min/max deltas. Highlight biggest movers.
+- Maybe extend to dynasty rankings too, not just rookie.
+
+### Potential side benefit
+Once we have multiple cycles of this data (2027, 2028, ...) we could
+build a "draft-day adjustment factor" that estimates how much a given
+player's rank_ave is likely to move post-draft, based on their pre-draft
+std and tier. Useful for trading rookies in the days after the NFL draft
+when most owners are reacting to fresh news.

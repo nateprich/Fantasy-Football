@@ -185,3 +185,62 @@ build a "draft-day adjustment factor" that estimates how much a given
 player's rank_ave is likely to move post-draft, based on their pre-draft
 std and tier. Useful for trading rookies in the days after the NFL draft
 when most owners are reacting to fresh news.
+
+## Comp pick / extension / tag calculator
+
+The 2026+ rule changes (rookie extensions, comp picks for walked rookies)
+create a multi-year decision graph for every rookie on the roster:
+
+  Year 1-3: extend now? extend later? trade? hold?
+  Year 4: extend? tag? let walk for comp pick?
+  Trade: trade-acquired rookies must be extended in same league year of
+    acquisition (deadline Feb 14)
+
+Build a calculator: given a rookie's projected NPV, age, salary trajectory,
+position, and contract year, output the EV of each path:
+  - Extend now (locks +2 yrs at top-5 positional avg)
+  - Wait and extend in Year 3 (different pricing)
+  - Tag (1 yr at top-3 positional avg)
+  - Let walk for comp pick (3rd-round pick in the next draft)
+  - Trade (price assumes counterparty applies extension)
+
+For a marginal rookie, walk-for-comp-pick is often the right answer. For an
+obvious hit, extend-early is right. The middle is what's interesting and
+where small mispricings compound across a full roster of rookies.
+
+Roughly 2-3 hrs to build. Reuses NPV + pick value curve. Output: per-player
+recommendation table.
+
+## Comp-pick-aware trade pricing
+
+When trading a 2026+ rookie to another team, you transfer not just the
+contract but ALSO the compensatory pick option. Most other owners aren't
+yet pricing this in (the rule is brand new for the 2026 draft, so the
+first comp-pick payout doesn't happen until 2030+).
+
+The trade evaluator should add a small premium (~$200-400K) to traded 2026+
+rookies to reflect the future comp-pick option the receiving team will
+inherit. Current model treats them as just contract value.
+
+Roughly 30 min to add. Update trade_eval/evaluate.py to flag and adjust.
+
+## Comp-pick May-1 deadline arbitrage
+
+Comp pick is only awarded if the walked player signs with another team in
+auction BEFORE May 1. After that, no comp pick. This creates a real trade
+window:
+
+  - You hold a player you don't want to extend
+  - Auction runs March-Aug
+  - If the player is going to sign somewhere by April 30, holding for the
+    comp pick beats trading for less than ~$300K (the 3rd-round comp value)
+  - If the player likely signs after May 1 OR doesn't sign at all, trading
+    for any positive value beats letting them walk for nothing
+
+Tool to build: given a player's market value (FP / our model) and
+projected sign date (could estimate from FA auction history), recommend
+hold-for-comp-pick vs. trade-now. Most owners will think about this on
+March 31 in the panic of decision day. We can plan months earlier.
+
+Roughly 1 hr. New script that flags rookies-likely-to-walk and computes
+break-even trade value vs. comp pick.

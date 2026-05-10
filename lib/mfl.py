@@ -111,9 +111,10 @@ def fetch_player_metadata(year: int) -> dict[str, dict]:
     return out
 
 
-def fetch_rosters(year: int, week: int = 1) -> dict[str, list[dict]]:
+def fetch_rosters(year: int, week: int | None = 1) -> dict[str, list[dict]]:
     """franchise_id -> list of {player_id, salary, contract_year, status}."""
-    data = fetch(year, "rosters", W=week)
+    params = {} if week is None else {"W": week}
+    data = fetch(year, "rosters", **params)
     out: dict[str, list[dict]] = {}
     for f in _ensure_list(data.get("rosters", {}).get("franchise")):
         fid = f.get("id")

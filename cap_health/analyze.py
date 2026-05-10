@@ -32,7 +32,7 @@ from lib.league import (
 OUT_DIR = Path(__file__).resolve().parent.parent / "out" / "cap_health"
 
 
-def build_roster_dataframe(year: int, week: int, history: mfl.HistoricalBids) -> pd.DataFrame:
+def build_roster_dataframe(year: int, week: int | None, history: mfl.HistoricalBids) -> pd.DataFrame:
     players = mfl.fetch_player_metadata(year)
     franchises = mfl.fetch_franchises(year)
     rosters = mfl.fetch_rosters(year, week=week)
@@ -120,7 +120,7 @@ def flag_risks(team_df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def write_report(year: int, week: int, roster_df: pd.DataFrame) -> Path:
+def write_report(year: int, week: int | None, roster_df: pd.DataFrame) -> Path:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     md = OUT_DIR / f"{year}.md"
     csv = OUT_DIR / f"{year}_rosters.csv"
@@ -129,7 +129,8 @@ def write_report(year: int, week: int, roster_df: pd.DataFrame) -> Path:
     teams = flag_risks(team_summary(roster_df))
     market = league_position_market(roster_df)
 
-    lines = [f"# Cap Health — {year} (week {week} snapshot)", ""]
+    week_label = "current" if week is None else f"week {week}"
+    lines = [f"# Cap Health — {year} ({week_label} snapshot)", ""]
     lines.append(f"Cap: **${SALARY_CAP:,}**  ·  Teams: **{NUM_TEAMS}**  ·  Active roster max: **{ACTIVE_ROSTER_MAX}**")
     lines.append("")
 
@@ -168,12 +169,14 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--year", type=int, required=True)
     p.add_argument("--week", type=int, default=1)
+    p.add_argument("--current", action="store_true", help="Fetch current/offseason roster snapshot (omit MFL W param)")
     p.add_argument("--history-start", type=int, default=2017)
     args = p.parse_args()
 
+    week = None if args.current else args.week
     history = mfl.HistoricalBids.load(args.history_start, args.year)
-    df = build_roster_dataframe(args.year, args.week, history)
-    write_report(args.year, args.week, df)
+    df = build_roster_dataframe(args.year, week, history)
+    write_report(args.year, week, df)
 
 
 if __name__ == "__main__":

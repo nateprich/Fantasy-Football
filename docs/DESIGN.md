@@ -46,6 +46,10 @@ All constants live in [`../lib/league.py`](../lib/league.py).
               trade_eval/                  auction_prep/
               (deal grading               (max bid, tier bands,
                in dollars)                 cap-stress index)
+
+              competitiveness/             cutdown/
+              (lineup snapshot            (cut-impact report,
+               + validation)               live roster first)
 ```
 
 **Data flow:** MFL endpoints (rosters, auction history, weekly results, draft results,
@@ -89,6 +93,16 @@ longitudinal dataset.
 - `tier_bands.py` — production-tier salary p25/p50/p75 per position.
 - `cap_stress.py` — pre-auction league cap forecast and inflation/deflation signal.
 
+### `competitiveness/`
+- `analyze.py` — projected legal-lineup snapshot. Reports rank/percentile/gap to playoff line;
+  not a win-now/rebuild verdict.
+- `backtest.py` — retrospective lineup-strength check against historical team scoring.
+- `lineup.py` — shared legal lineup selection logic.
+
+### `cutdown/`
+- `analyze.py` — cut-impact report for roster-size decisions. Pulls live roster first, then overlays
+  NPV/projections where available and flags missing projection data for scouting review.
+
 ## Key models in 30 seconds each
 
 **Power-law market curve** (`salary = c * points^k` per position, log-log fit on the productive
@@ -110,6 +124,12 @@ LOPSIDED). User decides; tool grades.
 **Auction max bids** (three flavors: NPV-zero breakeven, cap-relative scaling by your league
 percentile, market p75 from tier history). User picks based on context.
 
+**Projected lineup snapshot** (best legal lineup from current projections). Useful for rank,
+percentile, and gap-to-playoff-line context, but intentionally not a posture verdict.
+
+**Cutdown impact** (one-player removal deltas). Measures starting-lineup loss, bench-depth loss,
+and NPV/cut-floor context; missing projections are flagged rather than treated as zero real value.
+
 ## What's intentionally NOT modeled
 
 - **Career arcs in year-1 projection.** FP already factors current age into next-year numbers.
@@ -121,6 +141,8 @@ percentile, market p75 from tier history). User picks based on context.
 - **Real-time bid agent.** Auction is async over 36-hour windows; manual is fine.
 - **Per-player matchup adjustments / weekly variance.** Not yet. The recommendation engine
   in BACKLOG would need this.
+- **Win-now/rebuild verdicts.** The lineup snapshot is an input, not a decision model. Posture
+  requires projections, depth, cap, NPV, trade market, schedule, injuries, and real W-L signal.
 
 ## Validation status (last run on 2017–2025)
 
@@ -148,6 +170,8 @@ Built and operational:
 - [x] Daily snapshot system + auto-commit to git
 - [x] Aging curves + per-player risk flag in NPV
 - [x] Auction prep (max bid, tier bands, cap stress)
+- [x] Projected lineup snapshot + retrospective validation scaffold
+- [x] Cutdown impact analyzer
 
 In [BACKLOG.md](BACKLOG.md):
 - Tag/extension calculator (high priority for Feb 2027 decisions)
@@ -169,6 +193,8 @@ In [BACKLOG.md](BACKLOG.md):
   the model operates on one year at a time but trades and contracts span multiple.
 - PK/Def carry option value (insurance + trade bait) the model can't quantify. Their NPV
   near zero is fine; don't read it as "always cut to min depth."
+- Competitiveness output is uncalibrated until it is backtested against archived preseason
+  projections. The retrospective backtest is a sanity check, not proof of forecast accuracy.
 - Aging curves are population averages. They UNDER-penalize elite/HOF-caliber players
   (the curves don't see selection bias on quality). The blended `--with-aging` mode and
   the risk flag both attempt to compensate, but the user should override when the model's

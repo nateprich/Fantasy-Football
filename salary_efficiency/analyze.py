@@ -52,7 +52,7 @@ def build_season_dataframe(year: int, history: mfl.HistoricalBids) -> pd.DataFra
         msg = str(e)
         # W14 doesn't exist for current/future seasons (Invalid week, 503, etc.)
         if "Invalid week" in msg or "503" in msg or "404" in msg:
-            rosters_w14 = {}
+            rosters_w14 = mfl.fetch_rosters(year, week=None)
         else:
             raise
     try:

@@ -2,6 +2,26 @@
 
 All meaningful changes to the analytics models. Format: date · commit · summary.
 
+## 2026-05-09 · competitiveness demoted to snapshot + cutdown separated
+
+The initial `competitiveness/` analyzer overreached by labeling teams as
+contender/rebuilder from one projected-points table. That was too strong for an
+uncalibrated model.
+
+Changes:
+- `competitiveness.analyze` now outputs a projected legal-lineup snapshot: rank,
+  percentile, gap to the projected playoff line, and bench skill depth.
+- Contender/rebuilder labels were removed from default output. Optional quartile
+  bands are explicitly marked experimental and neutral.
+- Legal lineup selection now enforces the constitution's minimum 1 RB / 1 WR / 1 TE
+  requirement instead of simply taking the top 6 RB/WR/TE.
+- Added `competitiveness.backtest` as a retrospective lineup-strength sanity check.
+  It is not a true forecast backtest unless run against archived preseason projections.
+- Added `cutdown.analyze` as a separate roster-slot tool using live MFL roster data
+  first and NPV/projections as overlays.
+- Fixed FantasyPros rookie rankings snapshots to use `type=rookies` (plural), the
+  actual rookie-only endpoint.
+
 ## 2026-05-04 · methodology clarification — rookie extension eligibility
 
 Reverted a brief speculative re-read of the constitution. The rookie extension rule

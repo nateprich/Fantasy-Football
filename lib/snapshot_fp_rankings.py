@@ -10,7 +10,7 @@ rookie draft, season). After enough snapshots accumulate, we can ask:
 
 Run:
     python -m lib.snapshot_fp_rankings              # standard pull
-    python -m lib.snapshot_fp_rankings --types dynasty rookie  # subset
+    python -m lib.snapshot_fp_rankings --types dynasty rookie_QB rookie_RB  # subset
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ OUT_DIR = Path(__file__).resolve().parent.parent / "data" / "fp_snapshots"
 BASE_URL = "https://api.fantasypros.com/public/v2/json/nfl"
 
 # (label, endpoint path, query params)
-# Note: "rookie" type requires per-position calls (position=ALL is rejected for that type),
+# Note: "rookies" type requires per-position calls (position=ALL is rejected for that type),
 # so we synthesize an ALL view by concatenating the position-specific responses.
 RANKING_TYPES = {
     "dynasty":         ("consensus-rankings", {"type": "dynasty",  "position": "ALL"}),
@@ -37,10 +37,10 @@ RANKING_TYPES = {
     "dynasty_RB":      ("consensus-rankings", {"type": "dynasty",  "position": "RB"}),
     "dynasty_WR":      ("consensus-rankings", {"type": "dynasty",  "position": "WR"}),
     "dynasty_TE":      ("consensus-rankings", {"type": "dynasty",  "position": "TE"}),
-    "rookie_QB":       ("consensus-rankings", {"type": "rookie",   "position": "QB"}),
-    "rookie_RB":       ("consensus-rankings", {"type": "rookie",   "position": "RB"}),
-    "rookie_WR":       ("consensus-rankings", {"type": "rookie",   "position": "WR"}),
-    "rookie_TE":       ("consensus-rankings", {"type": "rookie",   "position": "TE"}),
+    "rookie_QB":       ("consensus-rankings", {"type": "rookies",  "position": "QB"}),
+    "rookie_RB":       ("consensus-rankings", {"type": "rookies",  "position": "RB"}),
+    "rookie_WR":       ("consensus-rankings", {"type": "rookies",  "position": "WR"}),
+    "rookie_TE":       ("consensus-rankings", {"type": "rookies",  "position": "TE"}),
 }
 
 

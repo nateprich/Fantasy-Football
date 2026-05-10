@@ -545,6 +545,58 @@ This is genuinely useful context that owners overlook. In a cap-stressed market
 prices fall because fewer aggressive bidders. In a flush market prices climb
 because too much money chasing too few studs.
 
+## 5g. Projected lineup snapshot and cutdown analysis
+
+The `competitiveness/` tool was intentionally demoted from a posture verdict to a
+projected-lineup snapshot. It answers a narrow question:
+
+> If every team started its best legal lineup from current projections, how many
+> points would each roster project to score?
+
+It does **not** decide whether a team should buy, sell, contend, or rebuild.
+Those decisions require additional signals: weekly variance, schedule, injury risk,
+rookie uncertainty, cap flexibility, contract surplus, trade liquidity, and actual
+win/loss drift once the season starts.
+
+### Legal lineup logic
+
+The constitution requires 1 QB, 1-4 RB, 1-4 WR, 1-4 TE, 1 PK, and 1 Def. The
+snapshot therefore selects:
+
+1. Best QB
+2. Best RB, best WR, best TE
+3. Best three remaining RB/WR/TE, while keeping each skill position at max four
+4. Best PK and best Def
+
+This fixes the earlier crude `top 6 RB/WR/TE` shortcut, which could accidentally
+produce an illegal lineup with zero at a required skill position.
+
+### Validation path
+
+`competitiveness.backtest` runs a retrospective lineup-strength check across
+completed seasons. The default mode uses actual season player points on a Week 1
+roster snapshot, so it has hindsight baked in. That is useful for testing whether
+the lineup aggregation correlates with actual team scoring, but it is not a true
+forecast backtest.
+
+A decision-grade forecast backtest needs archived preseason projection snapshots.
+The FantasyPros snapshot system should eventually provide that from 2026 onward.
+
+### Cutdown is separate
+
+`cutdown.analyze` handles roster-size decisions independently from win-now posture.
+It pulls the live MFL roster first, then overlays NPV/projection data if available.
+For each player it computes:
+
+- starting-lineup points lost if cut
+- bench skill points lost if cut
+- NPV / cut-value context where available
+- missing-projection flags for scouting review
+
+Players missing from the NPV/projection data are **not** treated as automatic cuts.
+They are flagged as scouting-required because new rookies and deep prospects are
+exactly where projection feeds can be thinnest.
+
 ## 6. Files and where things live
 
 ```
@@ -573,6 +625,12 @@ auction_prep/
   tier_bands.py            Production-tier salary p25/p50/p75
   cap_stress.py            Pre-auction league cap forecast
   DESIGN.md                Detailed spec for the auction tooling
+competitiveness/
+  analyze.py               Projected legal-lineup snapshot, not a posture verdict
+  backtest.py              Retrospective lineup-strength validation check
+  lineup.py                Shared legal lineup selection helpers
+cutdown/
+  analyze.py               Cut-impact report using live roster plus NPV overlay
 docs/
   DESIGN.md                System overview + roadmap
   METHODOLOGY.md           This file. Decisions and rationale.
@@ -627,6 +685,11 @@ python -m auction_prep.max_bid --player "Puka Nacua" --my-team "Midwestside"
 python -m auction_prep.max_bid --position WR --top 30 --my-team "Midwestside"
 python -m auction_prep.tier_bands --position RB --years 2021 2022 2023 2024 2025
 python -m auction_prep.cap_stress --year 2027 --source-year 2026
+
+# === Projected lineup snapshot and cutdown
+python -m competitiveness.analyze --year 2026 --my-team "Midwestside"
+python -m competitiveness.backtest --years 2021 2022 2023 2024 2025
+python -m cutdown.analyze --year 2026 --my-team "Midwestside"
 
 # === Snapshot tools
 python -m lib.snapshot_fp_rankings              # ad-hoc rankings pull

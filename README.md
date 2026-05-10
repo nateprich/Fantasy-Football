@@ -22,6 +22,8 @@ Personal analytics for The League (MFL #13522), a 16-team dynasty/salary-cap lea
 | `aging/` | Per-position aging curves (performance × survival) + per-player risk scoring. |
 | `trade_eval/` | Trade fairness CLI + league-wide pick inventory. |
 | `auction_prep/` | Per-player max-bid calculator, tier bands, league cap-stress index. |
+| `competitiveness/` | Projected lineup snapshot + retrospective validation checks. |
+| `cutdown/` | Cut-impact analyzer for roster-size decisions. |
 | `Top 30 Salary/` | Original JS exporter (still works). Superseded by Python going forward. |
 
 ## Setup
@@ -78,6 +80,11 @@ python -m auction_prep.max_bid --player "Puka Nacua" --my-team "Midwestside"
 python -m auction_prep.max_bid --position WR --top 30 --my-team "Midwestside"
 python -m auction_prep.tier_bands --position RB --years 2021 2022 2023 2024 2025
 python -m auction_prep.cap_stress --year 2027 --source-year 2026
+
+# Projected lineup snapshot, retrospective validation, and cutdown impact
+python -m competitiveness.analyze --year 2026 --my-team "Midwestside"
+python -m competitiveness.backtest --years 2021 2022 2023 2024 2025
+python -m cutdown.analyze --year 2026 --my-team "Midwestside"
 ```
 
 Reports are written to `out/<project>/<year>.md` (and CSV). The `.cache/` directory holds raw
